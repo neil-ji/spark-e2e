@@ -18,8 +18,53 @@
 import { Command } from "commander";
 import { writeFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, cpSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ── Agent definitions ───────────────────────────────────
+
+interface Agent {
+  name: string;
+  label: string;
+  /** Project-level skills directory (relative to project root) */
+  projectDir: string;
+  /** User-level skills directory (relative to $HOME) */
+  userDir: string;
+  /** Directories that indicate this agent is in use */
+  detectDirs: string[];
+}
+
+const AGENTS: Agent[] = [
+  {
+    name: "claude",
+    label: "Claude Code",
+    projectDir: ".claude/skills",
+    userDir: ".claude/skills",
+    detectDirs: [".claude"],
+  },
+  {
+    name: "codex",
+    label: "OpenAI Codex",
+    projectDir: ".agents/skills",
+    userDir: ".agents/skills",
+    detectDirs: [".agents", ".codex"],
+  },
+  {
+    name: "qoder",
+    label: "Qoder",
+    projectDir: ".qoder/skills",
+    userDir: ".qoder/skills",
+    detectDirs: [".qoder"],
+  },
+  {
+    name: "trae",
+    label: "Trae",
+    projectDir: ".trae/skills",
+    userDir: ".trae/skills",
+    detectDirs: [".trae", ".traecli"],
+  },
+];
 import { spawnSync } from "node:child_process";
 
 // Register built-in backends and providers
@@ -55,45 +100,149 @@ async function captureAndEncode(opts?: {
 
 program
   .command("init")
-  .description("Copy spark-e2e skills to .claude/skills/")
-  .option("--dir <path>", "Target directory", ".claude/skills")
+  .description("Set up spark-e2e skills for AI coding agents in this project")
+  .option("--agent <name>", "Target a specific agent: claude, codex, qoder, trae")
+  .option("--all", "Install for all supported agents")
+  .option("--global", "Install to user home directory (all projects)")
+  .option("--dir <path>", "Custom target directory (overrides agent detection)")
   .action(async (opts) => {
-    const target = resolve(opts.dir);
-    mkdirSync(target, { recursive: true });
+    const cwd = process.cwd();
+    const home = homedir();
 
+    // ── Find skills source ──
     let skillsSrc: string | null = null;
-    const candidates = [
-      resolve(__dirname, "..", "skills"),
-      resolve(process.cwd(), "skills"),
-    ];
-    for (const c of candidates) {
+    for (const c of [resolve(__dirname, "..", "skills"), resolve(cwd, "skills")]) {
       if (existsSync(c) && statSync(c).isDirectory()) { skillsSrc = c; break; }
     }
-
     if (!skillsSrc) {
-      console.error("ERROR: Cannot find spark-e2e skills source.");
-      console.error("Clone the repo or run from the project root.");
+      console.error("ERROR: Cannot find spark-e2e skills source. Install: npm install -g spark-e2e");
       process.exit(1);
     }
 
-    console.log(`spark-e2e init — Installing skills from ${skillsSrc}`);
-    console.log(`Target: ${target}`);
-    console.log();
+    // ── Which agents to install for ──
+    const targets: { label: string; dir: string }[] = [];
 
-    let count = 0;
-    for (const entry of readdirSync(skillsSrc).sort()) {
-      const entryPath = join(skillsSrc, entry);
-      if (statSync(entryPath).isDirectory() && existsSync(join(entryPath, "SKILL.md"))) {
-        const dest = join(target, entry);
-        rmSync(dest, { recursive: true, force: true });
-        cpSync(entryPath, dest, { recursive: true });
-        console.log(`  ✓ ${entry}`);
-        count++;
+    if (opts.dir) {
+      targets.push({ label: "custom", dir: resolve(opts.dir) });
+    } else if (opts.all) {
+      for (const a of AGENTS) {
+        const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+        targets.push({ label: a.label, dir: base });
+      }
+    } else if (opts.agent) {
+      const a = AGENTS.find(x => x.name === opts.agent);
+      if (!a) {
+        console.error(`Unknown agent: ${opts.agent}. Supported: ${AGENTS.map(x => x.name).join(", ")}`);
+        process.exit(1);
+      }
+      const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+      targets.push({ label: a.label, dir: base });
+    } else {
+      // Auto-detect: check which agent dirs exist in the project
+      const detected = AGENTS.filter(a =>
+        a.detectDirs.some(d => existsSync(resolve(cwd, d)))
+      );
+      if (detected.length > 0) {
+        for (const a of detected) {
+          const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+          targets.push({ label: a.label, dir: base });
+        }
+      } else {
+        // Default: Claude Code
+        targets.push({
+          label: "Claude Code (default)",
+          dir: resolve(opts.global ? home : cwd, ".claude/skills"),
+        });
       }
     }
 
+    // ── Collect skill names ──
+    const skillNames = readdirSync(skillsSrc)
+      .filter(e => statSync(join(skillsSrc, e)).isDirectory() && existsSync(join(skillsSrc, e, "SKILL.md")))
+      .sort();
+
+    if (skillNames.length === 0) {
+      console.error("No skills found in source directory.");
+      process.exit(1);
+    }
+
+    // ── Install skills ──
+    console.log("spark-e2e init");
+    console.log(`Source: ${skillsSrc}`);
+    if (opts.global) console.log("Scope: global (user home)");
     console.log();
-    console.log(`Installed ${count} skills. Run in Claude Code: /${readdirSync(skillsSrc).filter(e => statSync(join(skillsSrc, e)).isDirectory() && existsSync(join(skillsSrc, e, "SKILL.md"))).join(", /")}`);
+
+    for (const { label, dir } of targets) {
+      console.log(`── ${label} ──`);
+      console.log(`   ${dir}/`);
+      mkdirSync(dir, { recursive: true });
+
+      for (const name of skillNames) {
+        const src = join(skillsSrc, name);
+        const dest = join(dir, name);
+        rmSync(dest, { recursive: true, force: true });
+        cpSync(src, dest, { recursive: true });
+        console.log(`   ✓ ${name}`);
+      }
+      console.log();
+    }
+
+    // ── Create config templates if missing ──
+    const configPath = resolve(cwd, ".spark-e2e.yaml");
+    if (!existsSync(configPath)) {
+      const template = [
+        "# spark-e2e configuration",
+        "# See: https://github.com/neilji/spark-e2e",
+        "",
+        "browser:",
+        "  backend: browser-harness",
+        "  url: http://localhost:5173",
+        "",
+        "viewport:",
+        "  width: 1600",
+        "  height: 1200",
+        "  deviceScaleFactor: 1",
+        "",
+        "vlm:",
+        '  api_key: "${SPARK_E2E_API_KEY}"',
+        '  base_url: "${SPARK_E2E_BASE_URL}"',
+        "  model: gpt-4o",
+        "",
+        "prompts:",
+        "  strictness: standard",
+        "",
+      ].join("\n");
+      writeFileSync(configPath, template, "utf-8");
+      console.log(`── Config ──`);
+      console.log(`   ✓ Created .spark-e2e.yaml`);
+      console.log();
+    }
+
+    const envPath = resolve(cwd, ".env.example");
+    if (!existsSync(envPath) && !existsSync(resolve(cwd, ".env"))) {
+      writeFileSync(envPath, [
+        "# spark-e2e VLM credentials",
+        "SPARK_E2E_API_KEY=your-api-key",
+        "SPARK_E2E_BASE_URL=https://your-vlm/v1",
+        "SPARK_E2E_MODEL=gpt-4o",
+        "",
+      ].join("\n"), "utf-8");
+      console.log(`   ✓ Created .env.example (copy to .env and fill in your key)`);
+      console.log();
+    }
+
+    // ── Summary ──
+    const scopeLabel = opts.global ? "globally (all projects)" : `in ${cwd}`;
+    console.log(`Done. ${skillNames.length} skills installed ${scopeLabel}.`);
+    console.log();
+    console.log("Skills available as slash commands:");
+    for (const name of skillNames) console.log(`  /${name}`);
+    console.log();
+    console.log("Next steps:");
+    console.log("  1. Set your VLM API key: export SPARK_E2E_API_KEY=...");
+    console.log("  2. Verify setup:        spark-e2e doctor");
+    console.log("  3. Try a review:        spark-e2e review --url http://localhost:5173");
+    console.log("  4. In your AI agent:    /ui-review http://localhost:5173");
   });
 
 // ── navigate ─────────────────────────────────────────────

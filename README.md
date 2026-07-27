@@ -26,7 +26,10 @@ Then in Claude Code, run `/ui-review`, `/dom-verify`, or `/e2e-test`.
 
 | Command | What it does |
 |---|---|
-| `spark-e2e init` | Copy skills to `.claude/skills/` for Claude Code |
+| `spark-e2e init` | Set up skills for Claude Code, Codex, Qoder, Trae |
+| `spark-e2e init --all` | Install skills for all supported agents |
+| `spark-e2e init --agent codex` | Install for a specific agent |
+| `spark-e2e init --global` | Install to user home (all projects) |
 | `spark-e2e navigate <url>` | Load a page in the browser |
 | `spark-e2e snapshot --url <url>` | Capture a screenshot |
 | `spark-e2e inspect "<prompt>" --url <url>` | Ask a VLM about the page |
