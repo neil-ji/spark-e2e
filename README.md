@@ -7,12 +7,12 @@ VLM-powered visual E2E testing for the web.
 
 ```bash
 # Install
-npx spark-e2e init          # npm — zero install
-# or: pip install spark-e2e && spark-e2e init    # Python
+npx spark-e2e init                    # auto-detect agent, project scope
 
-# Configure
-export SPARK_E2E_API_KEY="your-api-key"
-export SPARK_E2E_BASE_URL="https://your-vlm/v1"
+# Configure VLM (saved globally to ~/.spark-e2e/.env)
+spark-e2e init --api-key "sk-..." --base-url "https://api.openai.com/v1"
+
+# Verify
 spark-e2e doctor
 
 # Use
@@ -20,16 +20,14 @@ spark-e2e review --focus comprehensive --url http://localhost:5173
 spark-e2e assert "Two cards have equal height" --url http://localhost:5173
 ```
 
-Then in Claude Code, run `/ui-review`, `/dom-verify`, or `/e2e-test`.
-
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `spark-e2e init` | Set up skills for Claude Code, Codex, Qoder, Trae |
-| `spark-e2e init --all` | Install skills for all supported agents |
+| `spark-e2e init` | Set up skills + config for AI agents |
+| `spark-e2e init --all --scope user` | Install for all agents globally |
 | `spark-e2e init --agent codex` | Install for a specific agent |
-| `spark-e2e init --global` | Install to user home (all projects) |
+| `spark-e2e init --api-key <k> --base-url <u>` | Configure VLM credentials |
 | `spark-e2e navigate <url>` | Load a page in the browser |
 | `spark-e2e snapshot --url <url>` | Capture a screenshot |
 | `spark-e2e inspect "<prompt>" --url <url>` | Ask a VLM about the page |

@@ -16,7 +16,7 @@
  *   doctor       Diagnose the environment
  */
 import { Command } from "commander";
-import { writeFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, cpSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, cpSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -100,14 +100,17 @@ async function captureAndEncode(opts?: {
 
 program
   .command("init")
-  .description("Set up spark-e2e skills for AI coding agents in this project")
+  .description("Set up spark-e2e skills for AI coding agents")
   .option("--agent <name>", "Target a specific agent: claude, codex, qoder, trae")
   .option("--all", "Install for all supported agents")
-  .option("--global", "Install to user home directory (all projects)")
+  .option("--scope <scope>", "Install scope: project (default) or user", "project")
   .option("--dir <path>", "Custom target directory (overrides agent detection)")
+  .option("--api-key <key>", "VLM API key (saved to ~/.spark-e2e/.env)")
+  .option("--base-url <url>", "VLM base URL (saved to ~/.spark-e2e/.env)")
   .action(async (opts) => {
     const cwd = process.cwd();
     const home = homedir();
+    const isUser = opts.scope === "user";
 
     // ── Find skills source ──
     let skillsSrc: string | null = null;
@@ -126,7 +129,7 @@ program
       targets.push({ label: "custom", dir: resolve(opts.dir) });
     } else if (opts.all) {
       for (const a of AGENTS) {
-        const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+        const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
         targets.push({ label: a.label, dir: base });
       }
     } else if (opts.agent) {
@@ -135,7 +138,7 @@ program
         console.error(`Unknown agent: ${opts.agent}. Supported: ${AGENTS.map(x => x.name).join(", ")}`);
         process.exit(1);
       }
-      const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+      const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
       targets.push({ label: a.label, dir: base });
     } else {
       // Auto-detect: check which agent dirs exist in the project
@@ -144,14 +147,14 @@ program
       );
       if (detected.length > 0) {
         for (const a of detected) {
-          const base = opts.global ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+          const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
           targets.push({ label: a.label, dir: base });
         }
       } else {
         // Default: Claude Code
         targets.push({
           label: "Claude Code (default)",
-          dir: resolve(opts.global ? home : cwd, ".claude/skills"),
+          dir: resolve(isUser ? home : cwd, ".claude/skills"),
         });
       }
     }
@@ -169,8 +172,7 @@ program
     // ── Install skills ──
     console.log("spark-e2e init");
     console.log(`Source: ${skillsSrc}`);
-    if (opts.global) console.log("Scope: global (user home)");
-    console.log();
+    if (isUser) console.log("Scope: user (installing to home directory)");
 
     for (const { label, dir } of targets) {
       console.log(`── ${label} ──`);
@@ -185,6 +187,42 @@ program
         console.log(`   ✓ ${name}`);
       }
       console.log();
+    }
+
+    // ── VLM config (global ~/.spark-e2e/.env) ──
+    if (opts.apiKey || opts.baseUrl) {
+      const globalDir = resolve(home, ".spark-e2e");
+      mkdirSync(globalDir, { recursive: true });
+      const envPath = resolve(globalDir, ".env");
+      let existing = "";
+      if (existsSync(envPath)) existing = readFileSync(envPath, "utf-8");
+
+      const lines: string[] = [];
+      if (opts.apiKey) lines.push(`SPARK_E2E_API_KEY=${opts.apiKey}`);
+      if (opts.baseUrl) lines.push(`SPARK_E2E_BASE_URL=${opts.baseUrl}`);
+
+      if (lines.length > 0) {
+        // Merge: update existing keys, keep other lines
+        const toWrite = new Map<string, string>();
+        for (const line of existing.split("\n")) {
+          const eq = line.indexOf("=");
+          if (eq > 0) toWrite.set(line.slice(0, eq).trim(), line);
+        }
+        for (const line of lines) {
+          const eq = line.indexOf("=");
+          toWrite.set(line.slice(0, eq), line);
+        }
+        // Add default model if not present
+        if (!toWrite.has("SPARK_E2E_MODEL")) {
+          toWrite.set("SPARK_E2E_MODEL", "SPARK_E2E_MODEL=gpt-4o");
+        }
+        writeFileSync(envPath, [...toWrite.values()].join("\n") + "\n", "utf-8");
+        console.log(`── VLM Config ──`);
+        console.log(`   ✓ ${envPath}`);
+        if (opts.apiKey) console.log("   ✓ API key saved");
+        if (opts.baseUrl) console.log("   ✓ Base URL saved");
+        console.log();
+      }
     }
 
     // ── Create config templates if missing ──
@@ -232,7 +270,7 @@ program
     }
 
     // ── Summary ──
-    const scopeLabel = opts.global ? "globally (all projects)" : `in ${cwd}`;
+    const scopeLabel = isUser ? "globally (all projects)" : `in ${cwd}`;
     console.log(`Done. ${skillNames.length} skills installed ${scopeLabel}.`);
     console.log();
     console.log("Skills available as slash commands:");

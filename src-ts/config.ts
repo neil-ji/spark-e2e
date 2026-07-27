@@ -10,6 +10,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { homedir } from "node:os";
 import * as yaml from "js-yaml";
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
@@ -195,9 +196,22 @@ function applyLegacyEnvVars(config: Config): void {
 }
 
 function loadDotenv(): void {
-  const envPath = process.env.SPARK_E2E_ENV ?? ".env";
-  if (existsSync(envPath)) {
-    dotenvConfig({ path: envPath });
+  // 1. Explicit path via SPARK_E2E_ENV
+  const explicitPath = process.env.SPARK_E2E_ENV;
+  if (explicitPath && existsSync(explicitPath)) {
+    dotenvConfig({ path: explicitPath });
+    return;
+  }
+
+  // 2. Project-level .env
+  if (existsSync(".env")) {
+    dotenvConfig({ path: ".env" });
+  }
+
+  // 3. User-level global .env (always loaded as fallback)
+  const globalEnv = resolve(homedir(), ".spark-e2e", ".env");
+  if (existsSync(globalEnv)) {
+    dotenvConfig({ path: globalEnv, override: false }); // don't override project values
   }
 }
 
