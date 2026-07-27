@@ -1,0 +1,46 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  # Quick smoke test before publishing
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Verify CLI is functional
+        run: node dist/cli.js --help
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: [verify]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Publish
+        run: npm publish --provenance --registry https://registry.npmjs.org
