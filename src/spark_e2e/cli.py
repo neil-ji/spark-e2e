@@ -1,12 +1,15 @@
 """CLI entry point for spark-e2e.
 
 Commands:
-    serve      Start the MCP server (for Claude Code integration)
     init       Copy skills to .claude/skills/
-    doctor     Diagnose the environment
+    navigate   Load a URL in the browser
     snapshot   Capture a browser screenshot
-    assert     Run a visual assertion
-    review     Run a comprehensive visual review
+    inspect    Free-form VLM screenshot analysis
+    assert     Run a visual assertion (pass/fail)
+    compare    Compare page against expected state
+    review     Comprehensive visual UI audit
+    dom-verify Batch DOM structure + CSS discovery
+    doctor     Diagnose the environment
 """
 
 from __future__ import annotations
@@ -15,12 +18,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-
-
-def cmd_serve(args: argparse.Namespace) -> None:
-    """Start the MCP server on stdio."""
-    from spark_e2e.server import main
-    main()
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -286,10 +283,6 @@ def main() -> None:
         description="VLM-powered visual E2E testing CLI",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # serve
-    p_serve = subparsers.add_parser("serve", help="Start the MCP server")
-    p_serve.set_defaults(func=cmd_serve)
 
     # init
     p_init = subparsers.add_parser("init", help="Copy skills to .claude/skills/")
