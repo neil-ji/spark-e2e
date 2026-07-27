@@ -1,28 +1,9 @@
 {
   "name": "spark-e2e",
   "version": "0.1.0",
-  "description": "VLM-powered visual E2E testing for the web — CLI, MCP server, and Claude Code skills",
-  "license": "MIT",
-  "type": "module",
-  "author": {
-    "name": "Neil Ji",
-    "email": "neilji@users.noreply.github.com"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/neilji/spark-e2e"
-  },
-  "keywords": [
-    "claude-code",
-    "claude-code-plugin",
-    "e2e",
-    "testing",
-    "visual",
-    "vlm",
-    "browser",
-    "ui-review",
-    "mcp"
-  ],
+  "description": "VLM-powered visual E2E testing for the web — one command per action, no server needed. Works with Claude Code, Codex, Qoder, Trae.",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
   "bin": {
     "spark-e2e": "./dist/cli.js"
   },
@@ -37,8 +18,39 @@
     "prepublishOnly": "npm run build",
     "start": "node dist/cli.js"
   },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "codex",
+    "qoder",
+    "trae",
+    "e2e",
+    "testing",
+    "visual",
+    "vlm",
+    "browser",
+    "ui-review",
+    "visual-testing",
+    "screenshot",
+    "ai-agent",
+    "agent-skills",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "neil-ji",
+  "homepage": "https://github.com/neilji/spark-e2e#readme",
+  "bugs": {
+    "url": "https://github.com/neilji/spark-e2e/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neilji/spark-e2e.git"
+  },
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "provenance": "true"
   },
   "dependencies": {
     "commander": "^13.1.0",
