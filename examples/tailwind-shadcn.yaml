@@ -1,0 +1,35 @@
+# shadcn/ui + Tailwind CSS example config
+# Copy to .spark-e2e.yaml and customize for your shadcn/ui project
+
+browser:
+  backend: browser-harness
+  url: http://localhost:3000
+
+viewport:
+  width: 1440
+  height: 900
+  deviceScaleFactor: 1
+
+vlm:
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
+
+selectors:
+  # shadcn/ui Card component uses .rounded-xl and .border classes
+  card: '[class*="rounded-"][class*="border"]'
+  # shadcn/ui NavigationMenu items
+  active_nav: '[data-active="true"], [data-state="active"], [aria-current="page"]'
+  # Sidebar (if using shadcn sidebar block)
+  sidebar_item: '[class*="sidebar"] a, [data-sidebar] a'
+
+# shadcn/ui uses CSS variables with --color- prefix by convention
+# but check your globals.css for the exact names
+css_variables:
+  - "--color-accent"
+  - "--color-text"
+  - "--color-text-secondary"
+  - "--color-border"
+  - "--color-success"
+  - "--color-error"
+  - "--color-warning"

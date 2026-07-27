@@ -1,0 +1,35 @@
+# spark-ui + React + Tailwind example config
+# Copy to .spark-e2e.yaml and customize for your spark-ui project
+
+browser:
+  backend: browser-harness
+  url: http://localhost:5173
+
+viewport:
+  width: 1600
+  height: 1200
+  deviceScaleFactor: 1
+
+vlm:
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
+
+selectors:
+  card: ".spark-card"
+  progress_fill: ".spark-progress__fill"
+  active_nav: '[aria-current="page"]'
+  sidebar_item: '[class*="sidebar"] a'
+
+# spark-ui uses --spark (not --color-accent) for accent color
+# Other CSS vars follow typical Tailwind/design-token conventions
+css_variables:
+  - "--spark"
+  - "--color-text"
+  - "--color-text-secondary"
+  - "--color-text-muted"
+  - "--color-border"
+  - "--color-positive"
+  - "--color-negative"
+  - "--color-warning"
+  - "--radius-full"

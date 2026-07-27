@@ -1,0 +1,33 @@
+{
+  "name": "spark-e2e",
+  "version": "0.1.0",
+  "description": "VLM-powered visual E2E testing for the web — CLI, MCP server, and Claude Code skills",
+  "license": "MIT",
+  "author": {
+    "name": "Neil Ji",
+    "email": "neilji@users.noreply.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neilji/spark-e2e"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "e2e",
+    "testing",
+    "visual",
+    "vlm",
+    "browser",
+    "ui-review",
+    "mcp"
+  ],
+  "bin": {
+    "spark-e2e": "./run.sh"
+  },
+  "files": [
+    "run.sh",
+    "skills/",
+    ".claude-plugin/"
+  ]
+}

@@ -1,0 +1,57 @@
+# spark-e2e configuration
+# Copy to .spark-e2e.yaml in your project root and customize.
+# All values shown are the defaults; omit sections you don't need to change.
+
+# ── Browser automation ──
+browser:
+  # Backend: "browser-harness" (default) or "playwright"
+  backend: browser-harness
+  # Default target URL
+  url: http://localhost:5173
+
+# ── Default viewport for screenshots ──
+viewport:
+  width: 1600
+  height: 1200
+  deviceScaleFactor: 1
+
+# ── VLM / Vision Language Model ──
+vlm:
+  # Use ${ENV_VAR} syntax to reference environment variables
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
+
+# ── Project-specific CSS selectors (optional) ──
+# Customize these to match your component library.
+# Each selector is used by dom-verify to locate elements.
+selectors:
+  # CSS selector for card/panel containers
+  card: '[class*="card"]'
+  # CSS selector for progress bar fill elements
+  progress_fill: '[class*="progress"][class*="fill"]'
+  # CSS selector for active/highlighted nav items
+  active_nav: '[aria-current="page"]'
+  # CSS selector for sidebar/menu item links
+  sidebar_item: '[class*="sidebar"] [class*="item"], [class*="menu"] [class*="item"]'
+
+# ── Project-specific CSS variables for design token discovery (optional) ──
+# List the CSS custom properties your project uses for theming.
+# If empty, dom-verify auto-discovers --color-* variables on :root.
+css_variables: []
+# Example for a project with custom tokens:
+# css_variables:
+#   - "--color-accent"
+#   - "--color-text"
+#   - "--color-text-secondary"
+#   - "--color-positive"
+#   - "--color-negative"
+#   - "--color-warning"
+#   - "--color-border"
+
+# ── Anti-hallucination strictness ──
+# "standard" — balanced verification (default)
+# "strict"   — VLM must be very confident to report an issue
+# "relaxed"  — VLM may report plausible issues with lower confidence
+prompts:
+  strictness: standard

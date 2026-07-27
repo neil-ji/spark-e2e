@@ -8,6 +8,20 @@ spark-e2e is a VLM-powered visual E2E testing tool for the web. It takes browser
 
 It runs as both a **CLI** (`spark-e2e`) and an **MCP server** (for Claude Code integration). Three Claude Code skills are bundled in `skills/` and define the canonical workflows for using the MCP tools.
 
+## Distribution Channels
+
+The project supports three installation channels:
+
+| Channel | Command | What you get |
+|---|---|---|
+| pip | `pip install spark-e2e` | CLI + MCP server + skills (via `spark-e2e init`) |
+| npx | `npx spark-e2e` | Auto-installs pip package + delegates to CLI |
+| Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 3 skills as Claude Code slash commands |
+
+The npm channel (`package.json` + `run.sh` at repo root) is a thin shell wrapper that auto-installs the Python package via pip/uv/pipx on first run, then delegates all commands to the Python CLI.
+
+The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skills` with `source: "./"` (relative path, same repo), pointing `skills: ["skills"]` to auto-discover all three skill directories.
+
 ## Commands
 
 ```bash
@@ -23,6 +37,9 @@ pytest tests/test_core.py::TestConfig::test_default_config
 
 # MCP server (for Claude Code integration)
 spark-e2e serve
+
+# Copy skills to .claude/skills/
+spark-e2e init
 
 # CLI — diagnose setup
 spark-e2e doctor

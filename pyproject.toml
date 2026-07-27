@@ -1,0 +1,46 @@
+[project]
+name = "spark-e2e"
+version = "0.1.0"
+description = "VLM-powered visual E2E testing MCP server and CLI for browser-harness and Playwright"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
+authors = [
+    { name = "Neil Ji", email = "neilji@users.noreply.github.com" },
+]
+keywords = ["e2e", "testing", "visual", "vlm", "browser", "mcp", "claude-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "mcp>=1.12.0",
+    "openai>=1.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+playwright = ["playwright>=1.40"]
+dotenv = ["python-dotenv>=1.0.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+spark-e2e = "spark_e2e.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spark_e2e"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "spark_e2e/_skills"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
