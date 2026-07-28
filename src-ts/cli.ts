@@ -79,7 +79,6 @@ import { spawnSync } from "node:child_process";
 // Register built-in backends and providers
 import { registerBackend } from "./browser/index.js";
 import { BrowserHarnessBackend } from "./browser/browser-harness.js";
-import { toDataUrl } from "./browser/browser-harness.js";
 import { registerProvider } from "./vlm/index.js";
 import { OpenAICompatProvider, extractJson } from "./vlm/openai-compat.js";
 registerBackend("browser-harness", BrowserHarnessBackend);
@@ -105,11 +104,13 @@ async function captureAndEncode(opts?: {
   viewport?: { width: number; height: number; deviceScaleFactor?: number };
   reload?: boolean;
   delay?: number;
-}): Promise<{ dataUrl: string; png: Buffer }> {
+  format?: "png" | "jpeg";
+  quality?: number;
+}): Promise<{ dataUrl: string; buf: Buffer }> {
   const backend = getBackend(getConfig().browser.backend);
-  const png = await backend.captureScreenshot(opts);
-  const buf = Buffer.isBuffer(png) ? png : Buffer.from(png as ArrayBuffer);
-  return { dataUrl: toDataUrl(buf), png: buf };
+  const raw = await backend.captureScreenshot(opts);
+  const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+  return { dataUrl: backend.toDataUrl(buf), buf };
 }
 
 // ── setup ─────────────────────────────────────────────────

@@ -50,8 +50,8 @@ class PlaywrightBackend(BrowserBackend):
     def capture_screenshot(
         self,
         viewport: dict | None = None,
-        reload: bool = False,
-        delay: float = 0.3,
+        reload: bool = True,
+        delay: float = 0.5,
         max_dim: int = 1800,
         full_page: bool = False,
     ) -> bytes:
@@ -63,12 +63,14 @@ class PlaywrightBackend(BrowserBackend):
                 "height": viewport["height"],
             })
 
+        # reload defaults to True — SPA rendering often needs a refresh
         if reload:
             self._page.reload()
             self._page.wait_for_load_state("networkidle")
-            if delay > 0:
-                import time
-                time.sleep(delay)
+        # delay is independent of reload
+        if delay > 0:
+            import time
+            time.sleep(delay)
 
         png_bytes = self._page.screenshot(type="png", full_page=full_page)
 
@@ -140,15 +142,22 @@ class PlaywrightBackend(BrowserBackend):
         except Exception:
             return None
 
+    def wait_for_selector(self, selector: str, timeout_ms: int = 10000) -> None:
+        """Wait for a CSS selector to appear in the DOM."""
+        self._ensure_browser()
+        self._page.wait_for_selector(selector, timeout=timeout_ms)
+
+    def wait_for_timeout(self, ms: int) -> None:
+        """Pause for a fixed duration."""
+        import time
+        time.sleep(ms / 1000)
+
+    def to_data_url(self, image_bytes: bytes) -> str:
+        """Convert image bytes to base64 data URL."""
+        return "data:image/png;base64," + b64encode(image_bytes).decode("ascii")
+
     def close(self) -> None:
         if self._browser:
             self._browser.close()
         if hasattr(self, "_pw") and self._pw:
             self._pw.stop()
-
-    # ── Utility ──────────────────────────────────────────────────────
-
-    @staticmethod
-    def to_data_url(png_bytes: bytes) -> str:
-        """Encode PNG bytes as a ``data:image/png;base64,...`` URL."""
-        return "data:image/png;base64," + b64encode(png_bytes).decode("ascii")

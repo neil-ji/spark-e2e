@@ -51,12 +51,14 @@ export class PlaywrightBackend implements BrowserBackend {
       await page.setViewportSize({ width: opts.viewport.width, height: opts.viewport.height });
     }
 
-    if (opts?.reload) {
+    // reload defaults to true unless explicitly disabled with --no-reload
+    if (opts?.reload !== false) {
       await page.reload();
       await page.waitForLoadState("networkidle");
-      if ((opts.delay ?? 0) > 0) {
-        await new Promise((r) => setTimeout(r, (opts.delay ?? 0) * 1000));
-      }
+    }
+    // delay is independent of reload — always applied when set (seconds → ms)
+    if ((opts?.delay ?? 0) > 0) {
+      await new Promise((r) => setTimeout(r, opts!.delay! * 1000));
     }
 
     return page.screenshot({ type: "png", fullPage: opts?.fullPage ?? false }) as Promise<Buffer>;
@@ -126,12 +128,21 @@ export class PlaywrightBackend implements BrowserBackend {
     }
   }
 
+  async waitForSelector(selector: string, timeoutMs = 10000): Promise<void> {
+    const page = await this.ensureBrowser();
+    await page.waitForSelector(selector, { timeout: timeoutMs });
+  }
+
+  async waitForTimeout(ms: number): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+
+  toDataUrl(bytes: Buffer): string {
+    return "data:image/png;base64," + bytes.toString("base64");
+  }
+
   async close(): Promise<void> {
     if (this.browser) await this.browser.close();
     if (this.pw) await this.pw.stop();
-  }
-
-  static toDataUrl(pngBytes: Buffer): string {
-    return "data:image/png;base64," + pngBytes.toString("base64");
   }
 }

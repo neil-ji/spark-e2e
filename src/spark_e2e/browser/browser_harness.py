@@ -36,8 +36,8 @@ class BrowserHarnessBackend(BrowserBackend):
     def capture_screenshot(
         self,
         viewport: dict | None = None,
-        reload: bool = False,
-        delay: float = 0.3,
+        reload: bool = True,
+        delay: float = 0.5,
         max_dim: int = 1800,
         full_page: bool = False,
     ) -> bytes:
@@ -57,12 +57,13 @@ class BrowserHarnessBackend(BrowserBackend):
                 f"width={w}, height={h}, deviceScaleFactor={scale}, mobile=False)"
             )
 
-        # Reload page to pick up latest code changes
+        # Reload page to pick up latest code changes (defaults to True)
         if reload:
             commands.append('js("window.location.reload()")')
             commands.append("wait_for_load()")
-            if delay > 0:
-                commands.append(f"import time; time.sleep({delay})")
+        # delay is independent of reload — always applied when set
+        if delay > 0:
+            commands.append(f"import time; time.sleep({delay})")
 
         # Capture screenshot
         full_arg = ", full=True" if full_page else ""
@@ -237,13 +238,29 @@ class BrowserHarnessBackend(BrowserBackend):
         result = self.execute_js(js_code)
         return result if isinstance(result, dict) else None
 
+    def wait_for_selector(self, selector: str, timeout_ms: int = 10000) -> None:
+        """Wait for a CSS selector to appear via MutationObserver."""
+        safe = json.dumps(selector)
+        code = (
+            f"(function(){{var el=document.querySelector({safe});if(el)return true;"
+            f"return new Promise(function(resolve,reject){{"
+            f"var t=setTimeout(function(){{reject(new Error('Timeout: {safe}'))}},{timeout_ms});"
+            f"new MutationObserver(function(_,obs){{"
+            f"var el=document.querySelector({safe});if(el){{obs.disconnect();clearTimeout(t);resolve(true);}}"
+            f"}}).observe(document.documentElement,{{childList:true,subtree:true}})"
+            f"}})}})()"
+        )
+        self.execute_js(code)
+
+    def wait_for_timeout(self, ms: int) -> None:
+        """Pause for a fixed duration."""
+        import time
+        time.sleep(ms / 1000)
+
+    def to_data_url(self, image_bytes: bytes) -> str:
+        """Convert image bytes to base64 data URL."""
+        return "data:image/png;base64," + b64encode(image_bytes).decode("ascii")
+
     def close(self) -> None:
         """No-op for CLI-based backend — browser lifecycle is managed externally."""
         pass
-
-    # ── Utility ──────────────────────────────────────────────────────
-
-    @staticmethod
-    def to_data_url(png_bytes: bytes) -> str:
-        """Encode PNG bytes as a ``data:image/png;base64,...`` URL."""
-        return "data:image/png;base64," + b64encode(png_bytes).decode("ascii")

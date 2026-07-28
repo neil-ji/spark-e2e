@@ -43,6 +43,8 @@ export class BrowserHarnessBackend implements BrowserBackend {
     delay?: number;
     maxDim?: number;
     fullPage?: boolean;
+    format?: "png" | "jpeg";
+    quality?: number;
   }): Promise<Buffer> {
     const tmpDir = mkdtempSync(join(tmpdir(), "spark-e2e-"));
     const tmpPath = join(tmpDir, "screenshot.png");
@@ -58,12 +60,14 @@ export class BrowserHarnessBackend implements BrowserBackend {
       );
     }
 
-    if (opts?.reload) {
+    // reload defaults to true unless explicitly disabled with --no-reload
+    if (opts?.reload !== false) {
       commands.push('js("window.location.reload()")');
       commands.push("wait_for_load()");
-      if ((opts.delay ?? 0) > 0) {
-        commands.push(`import time; time.sleep(${opts!.delay})`);
-      }
+    }
+    // delay is independent of reload — always applied when set
+    if ((opts?.delay ?? 0) > 0) {
+      commands.push(`import time; time.sleep(${opts!.delay})`);
     }
 
     const maxDim = opts?.maxDim ?? 1800;
@@ -182,6 +186,21 @@ export class BrowserHarnessBackend implements BrowserBackend {
 
     const result = await this.executeJs(jsCode);
     return result && typeof result === "object" ? (result as import("./index.js").ElementRect) : null;
+  }
+
+  async waitForSelector(selector: string, timeoutMs = 10000): Promise<void> {
+    const safe = JSON.stringify(selector);
+    const jsCode = `(function(){var el=document.querySelector(${safe});if(el)return true;return new Promise(function(resolve,reject){var t=setTimeout(function(){reject(new Error("Timeout: ${safe}"))},${timeoutMs});new MutationObserver(function(_,obs){var el=document.querySelector(${safe});if(el){obs.disconnect();clearTimeout(t);resolve(true);}}).observe(document.documentElement,{childList:true,subtree:true})})})()`;
+    await this.executeJs(jsCode);
+  }
+
+  async waitForTimeout(ms: number): Promise<void> {
+    const seconds = ms / 1000;
+    runBrowserHarness(`import time; time.sleep(${seconds})`, Math.ceil(seconds) + 2);
+  }
+
+  toDataUrl(bytes: Buffer): string {
+    return "data:image/png;base64," + bytes.toString("base64");
   }
 
   async close(): Promise<void> {

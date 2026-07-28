@@ -36,15 +36,21 @@ export interface ScrollOptions {
   selector?: string;
 }
 
+export interface ScreenshotOptions {
+  viewport?: Viewport;
+  reload?: boolean;
+  delay?: number;
+  maxDim?: number;
+  fullPage?: boolean;
+  /** Output format. Default: "png". "jpeg" for smaller files. */
+  format?: "png" | "jpeg";
+  /** JPEG quality 1-100. Ignored for PNG. */
+  quality?: number;
+}
+
 export interface BrowserBackend {
-  /** Capture screenshot as PNG bytes. */
-  captureScreenshot(opts?: {
-    viewport?: Viewport;
-    reload?: boolean;
-    delay?: number;
-    maxDim?: number;
-    fullPage?: boolean;
-  }): Promise<Buffer>;
+  /** Capture screenshot. */
+  captureScreenshot(opts?: ScreenshotOptions): Promise<Buffer>;
 
   /** Execute JavaScript in the page context. */
   executeJs(script: string): Promise<unknown>;
@@ -60,6 +66,15 @@ export interface BrowserBackend {
 
   /** Scroll the page. Returns updated PageInfo. */
   scroll(opts?: ScrollOptions): Promise<PageInfo>;
+
+  /** Wait for a CSS selector to appear in the DOM. Throws on timeout. */
+  waitForSelector(selector: string, timeoutMs?: number): Promise<void>;
+
+  /** Wait a fixed amount of time. */
+  waitForTimeout(ms: number): Promise<void>;
+
+  /** Convert image bytes to a base64 data URL. */
+  toDataUrl(bytes: Buffer): string;
 
   /** Clean up resources. */
   close(): Promise<void>;

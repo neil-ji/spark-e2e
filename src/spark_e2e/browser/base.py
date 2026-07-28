@@ -10,17 +10,19 @@ class BrowserBackend(ABC):
     Implement this class to add support for a new browser automation tool
     (Playwright, Puppeteer, Selenium, etc.).
 
-    Subclasses must implement all 7 abstract methods.
+    Subclasses must implement all 10 abstract methods.
     """
 
     @abstractmethod
     def capture_screenshot(
         self,
         viewport: dict | None = None,
-        reload: bool = False,
-        delay: float = 0.3,
+        reload: bool = True,
+        delay: float = 0.5,
         max_dim: int = 1800,
         full_page: bool = False,
+        format: str = "png",
+        quality: int = 80,
     ) -> bytes:
         """Capture the current page as PNG bytes.
 
@@ -96,6 +98,40 @@ class BrowserBackend(ABC):
 
         Returns:
             A dict with keys: url, title, width, height, scroll_x, scroll_y.
+        """
+        ...
+
+    @abstractmethod
+    def wait_for_selector(self, selector: str, timeout_ms: int = 10000) -> None:
+        """Wait for a CSS selector to appear in the DOM.
+
+        Args:
+            selector: CSS selector to wait for.
+            timeout_ms: Maximum wait time in milliseconds.
+
+        Raises:
+            TimeoutError: If the selector does not appear within the timeout.
+        """
+        ...
+
+    @abstractmethod
+    def wait_for_timeout(self, ms: int) -> None:
+        """Pause execution for a fixed duration.
+
+        Args:
+            ms: Duration to wait in milliseconds.
+        """
+        ...
+
+    @abstractmethod
+    def to_data_url(self, image_bytes: bytes) -> str:
+        """Convert image bytes to a base64 data URL.
+
+        Args:
+            image_bytes: Raw image bytes (PNG or JPEG).
+
+        Returns:
+            A ``data:image/...;base64,...`` string.
         """
         ...
 
