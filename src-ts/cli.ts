@@ -388,7 +388,7 @@ program
       getReviewPrompt(cfg.prompts.strictness),
     ].join("\n");
 
-    const raw = await provider.chat(prompt, dataUrl, opts.model);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     console.log(raw);
     await backend.close();
   });
@@ -427,7 +427,7 @@ program
       'Respond ONLY with JSON: {"pass": true|false, "confidence": "high"|"medium"|"low", "observation": "...", "reasoning": "..."}',
     ].join("\n");
 
-    const raw = await provider.chat(prompt, dataUrl, opts.model);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     try {
       console.log(JSON.stringify(extractJson(raw), null, 2));
     } catch {
@@ -470,7 +470,7 @@ program
       'Respond ONLY with JSON: {"match": true|false, "differences": [...], "matches": [...], "overall_assessment": "..."}',
     ].join("\n");
 
-    const raw = await provider.chat(prompt, dataUrl, opts.model);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     try {
       console.log(JSON.stringify(extractJson(raw), null, 2));
     } catch {
@@ -526,7 +526,7 @@ program
     ].join("\n");
 
     console.log(`Reviewing (focus=${opts.focus}) ...`);
-    const raw = await provider.chat(prompt, dataUrl, opts.model);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     try {
       const result = extractJson(raw);
       const output = JSON.stringify(result, null, 2);

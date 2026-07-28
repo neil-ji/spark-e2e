@@ -44,6 +44,7 @@ class VLMConfig:
     base_url: str = ""
     model: str = "gpt-4o"
     provider: str = "openai-compat"
+    thinking_budget: int = 0
 
 
 @dataclass
@@ -174,6 +175,8 @@ def _apply_yaml_to_config(config: Config, data: dict[str, Any]) -> None:
                 config.vlm.model = str(v["model"])
             if "provider" in v:
                 config.vlm.provider = str(v["provider"])
+            if "thinking_budget" in v:
+                config.vlm.thinking_budget = int(v["thinking_budget"])
 
     if "selectors" in data:
         s = data["selectors"]
@@ -219,6 +222,14 @@ def _apply_env_vars(config: Config) -> None:
             obj, attr = attr_path
             target = getattr(config, obj)
             setattr(target, attr, val)
+
+    # Numeric env vars — handled separately
+    tb = os.environ.get("SPARK_E2E_THINKING_BUDGET", "")
+    if tb:
+        try:
+            config.vlm.thinking_budget = int(tb)
+        except ValueError:
+            pass
 
 
 def _apply_legacy_env_vars(config: Config) -> None:

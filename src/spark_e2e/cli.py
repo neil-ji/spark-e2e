@@ -223,7 +223,7 @@ def cmd_assert(args: argparse.Namespace) -> None:
     )
 
     print("Asking VLM ...")
-    raw = provider.chat(prompt, data_url, args.model)
+    raw = provider.chat(prompt, data_url, args.model, cfg.vlm.thinking_budget)
     try:
         from spark_e2e.vlm.openai_compat import extract_json
         result = extract_json(raw)
@@ -278,7 +278,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     )
 
     print(f"Reviewing (focus={args.focus}) ...")
-    raw = provider.chat(prompt, data_url, args.model)
+    raw = provider.chat(prompt, data_url, args.model, cfg.vlm.thinking_budget)
     try:
         from spark_e2e.vlm.openai_compat import extract_json
         result = extract_json(raw)

@@ -33,6 +33,7 @@ const VLMConfigSchema = z.object({
   baseUrl: z.string().default(""),
   model: z.string().default("gpt-4o"),
   provider: z.string().default("openai-compat"),
+  thinkingBudget: z.number().int().min(0).default(0),
 });
 
 const SelectorsConfigSchema = z.object({
@@ -65,7 +66,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 const DEFAULT_CONFIG: Config = {
   browser: { backend: "browser-harness", url: "http://localhost:5173" },
   viewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
-  vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat" },
+  vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 0 },
   selectors: {
     card: '[class*="card"]',
     progressFill: '[class*="progress"][class*="fill"]',
@@ -154,6 +155,7 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
     if (typeof vlm.base_url === "string") config.vlm.baseUrl = vlm.base_url as string;
     if (typeof vlm.model === "string") config.vlm.model = vlm.model as string;
     if (typeof vlm.provider === "string") config.vlm.provider = vlm.provider as string;
+    if (typeof vlm.thinking_budget === "number") config.vlm.thinkingBudget = vlm.thinking_budget as number;
   }
 
   const sel = data.selectors as Record<string, unknown> | undefined;
@@ -196,6 +198,13 @@ function applyEnvVars(config: Config): void {
     if (val) {
       (config[section] as Record<string, string>)[key] = val;
     }
+  }
+
+  // thinkingBudget is numeric — handle separately
+  const thinkingVal = process.env.SPARK_E2E_THINKING_BUDGET;
+  if (thinkingVal) {
+    const n = parseInt(thinkingVal, 10);
+    if (!isNaN(n) && n >= 0) config.vlm.thinkingBudget = n;
   }
 }
 

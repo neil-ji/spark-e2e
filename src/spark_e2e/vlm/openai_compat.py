@@ -26,7 +26,13 @@ class OpenAICompatProvider(VLMProvider):
         self._base_url = base_url
         self._model = model
 
-    def chat(self, prompt: str, image_data_url: str, model: str | None = None) -> str:
+    def chat(
+        self,
+        prompt: str,
+        image_data_url: str,
+        model: str | None = None,
+        thinking_budget: int = 0,
+    ) -> str:
         """Send a text + image prompt to the VLM.
 
         Uses the OpenAI Python SDK.  API key and base URL are read from
@@ -48,12 +54,17 @@ class OpenAICompatProvider(VLMProvider):
             from spark_e2e.config import get_vlm_model
             resolved_model = get_vlm_model()
 
-        _log(f"VLM model={resolved_model} base_url={base_url}")
+        thinking = thinking_budget > 0
+        _log(
+            f"VLM model={resolved_model} base_url={base_url}"
+            + (f" thinking_budget={thinking_budget}" if thinking else "")
+        )
 
         client = OpenAI(api_key=api_key, base_url=base_url)
-        response = client.chat.completions.create(
-            model=resolved_model,
-            messages=[
+
+        params: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
@@ -62,8 +73,18 @@ class OpenAICompatProvider(VLMProvider):
                     ],
                 }
             ],
-            max_tokens=16384,
-        )
+            "max_tokens": 16384,
+        }
+
+        if thinking:
+            # Anthropic-compatible: thinking.budget_tokens
+            # OpenAI o-series: reasoning_effort
+            # Both accept extra_body as the safe passthrough
+            params["extra_body"] = {
+                "thinking": {"budget_tokens": thinking_budget, "type": "enabled"},
+            }
+
+        response = client.chat.completions.create(**params)
 
         content = response.choices[0].message.content or ""
         _log(f"VLM response ({len(content)} chars)")

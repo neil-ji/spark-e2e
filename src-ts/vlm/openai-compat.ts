@@ -10,7 +10,12 @@ function log(msg: string): void {
 }
 
 export class OpenAICompatProvider implements VLMProvider {
-  async chat(prompt: string, imageDataUrl: string, model?: string): Promise<string> {
+  async chat(
+    prompt: string,
+    imageDataUrl: string,
+    model?: string,
+    thinkingBudget?: number,
+  ): Promise<string> {
     let [apiKey, baseUrl] = getVlmEnv();
     const resolvedModel = model ?? getVlmModel();
 
@@ -20,22 +25,36 @@ export class OpenAICompatProvider implements VLMProvider {
       baseUrl = baseUrl || process.env.OPENAI_BASE_URL || "";
     }
 
-    log(`VLM model=${resolvedModel} base_url=${baseUrl || "(default)"}`);
+    const thinking = (thinkingBudget ?? 0) > 0;
+    log(
+      `VLM model=${resolvedModel} base_url=${baseUrl || "(default)"}` +
+        (thinking ? ` thinking_budget=${thinkingBudget}` : ""),
+    );
 
     const client = new OpenAI({ apiKey, baseURL: baseUrl || undefined });
-    const response = await client.chat.completions.create({
-      model: resolvedModel,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: imageDataUrl } },
-          ],
-        },
-      ],
-      max_tokens: 16384,
-    });
+
+    const response = await client.chat.completions.create(
+      {
+        model: resolvedModel,
+        messages: [
+          {
+            role: "user" as const,
+            content: [
+              { type: "text" as const, text: prompt },
+              { type: "image_url" as const, image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
+        max_tokens: 16384,
+        ...(thinking
+          ? {
+              extra_body: {
+                thinking: { budget_tokens: thinkingBudget, type: "enabled" },
+              },
+            }
+          : {}),
+      },
+    );
 
     const content = response.choices[0]?.message?.content ?? "";
     log(`VLM response (${content.length} chars)`);
