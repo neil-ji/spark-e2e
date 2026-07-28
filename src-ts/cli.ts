@@ -483,4 +483,9 @@ program
 
 // ── Parse ────────────────────────────────────────────────
 
-program.parse();
+// Only auto-parse when executed directly, not when imported by tests
+if (!process.env.VITEST) {
+  program.parse();
+}
+
+export { program };
