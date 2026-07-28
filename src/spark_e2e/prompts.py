@@ -68,3 +68,15 @@ def get_assert_prompt(strictness: str = "standard") -> str:
 # Backward-compatible aliases (used by server.py migration)
 NO_HALLUCINATION = _BASE_HALLUCINATION_RULES
 NO_HALLUCINATION_ASSERT = _BASE_ASSERT_RULES
+
+
+def get_aesthetics_prompt(aesthetics: str) -> str:
+    """Return the aesthetics prompt block, or empty string if no rules."""
+    if not aesthetics.strip():
+        return ""
+    return (
+        "AESTHETIC & LAYOUT PRINCIPLES (project-specific):\n"
+        "Apply the following aesthetic standards when evaluating this UI:\n\n"
+        f"{aesthetics}\n\n"
+        "When reporting issues, reference which specific aesthetic principle is violated.\n"
+    )

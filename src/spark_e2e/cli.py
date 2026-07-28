@@ -258,6 +258,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     data_url = backend.to_data_url(png)
 
     from spark_e2e import prompts as prompts_mod
+    from spark_e2e.config import get_aesthetics
 
     focus_map = {
         "comprehensive": "Review ALL aspects: layout, alignment, spacing, color consistency, typography, text truncation, visual artifacts, rendering defects.",
@@ -267,10 +268,12 @@ def cmd_review(args: argparse.Namespace) -> None:
         "interactive": "Focus on interactive elements: button states, hover feedback, menu highlighting, tooltip visibility.",
     }
 
+    aesthetics_prompt = prompts_mod.get_aesthetics_prompt(get_aesthetics())
     prompt = (
         "You are a senior UI quality reviewer.\n"
         f"FOCUS: {focus_map.get(args.focus, focus_map['comprehensive'])}\n\n"
-        + prompts_mod.get_review_prompt() + "\n\n"
+        + prompts_mod.get_review_prompt() + "\n"
+        + aesthetics_prompt + "\n\n"
         'Respond ONLY JSON: {"findings": [...], "summary": "...", "no_issues_found": false}'
     )
 

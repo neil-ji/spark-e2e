@@ -67,6 +67,7 @@ class Config:
     selectors: SelectorsConfig = field(default_factory=SelectorsConfig)
     css_variables: list[str] = field(default_factory=list)
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
+    aesthetics_file: str = "AESTHETICS.md"
 
 
 # ── Config loading ──────────────────────────────────────────────────
@@ -191,6 +192,17 @@ def _apply_yaml_to_config(config: Config, data: dict[str, Any]) -> None:
         if isinstance(p, dict) and "strictness" in p:
             config.prompts.strictness = str(p["strictness"])
 
+    if "aesthetics_file" in data:
+        config.aesthetics_file = str(data["aesthetics_file"])
+
+
+def _read_aesthetics_file(path: str) -> str:
+    """Read the aesthetics file content. Returns empty string if not found."""
+    p = Path(path)
+    if not p.is_file():
+        return ""
+    return p.read_text(encoding="utf-8").strip()
+
 
 def _apply_env_vars(config: Config) -> None:
     """Apply SPARK_E2E_* env vars on top of config."""
@@ -312,3 +324,9 @@ def get_vlm_model(default: str = "gpt-4o") -> str:
     """Return the VLM model name from config, falling back to *default*."""
     c = get_config()
     return c.vlm.model or default
+
+
+def get_aesthetics() -> str:
+    """Return the content of the aesthetics file, or empty string."""
+    c = get_config()
+    return _read_aesthetics_file(c.aesthetics_file)

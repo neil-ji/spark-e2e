@@ -76,10 +76,10 @@ import { OpenAICompatProvider, extractJson } from "./vlm/openai-compat.js";
 registerBackend("browser-harness", BrowserHarnessBackend);
 registerProvider("openai-compat", OpenAICompatProvider);
 
-import { getConfig, load, findConfigFile } from "./config.js";
+import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
 import { getBackend, listBackends } from "./browser/index.js";
 import { getProvider } from "./vlm/index.js";
-import { getReviewPrompt, getAssertPrompt } from "./prompts.js";
+import { getReviewPrompt, getAssertPrompt, getAestheticsPrompt } from "./prompts.js";
 
 const program = new Command();
 
@@ -513,12 +513,14 @@ program
       interactive: "Focus on interactive: button states, hover feedback, menu highlighting, tooltip visibility.",
     };
 
+    const aesthetics = getAesthetics();
     const prompt = [
       "You are a senior UI quality reviewer. Do a thorough visual audit.",
       `FOCUS: ${focusPrompts[opts.focus] ?? focusPrompts.comprehensive}`,
       "",
       "For each issue: describe what's wrong, why it matters, how severe.",
       getReviewPrompt(cfg.prompts.strictness),
+      getAestheticsPrompt(aesthetics),
       "",
       'Respond ONLY with JSON: {"findings": [{"description":"...","location":"...","severity":"critical|major|minor","category":"layout|typography|color|spacing|rendering"}], "summary":"...", "no_issues_found":false}',
     ].join("\n");

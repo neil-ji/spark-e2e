@@ -60,3 +60,15 @@ export function getAssertPrompt(strictness = "standard"): string {
   else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
   return prompt;
 }
+
+export function getAestheticsPrompt(aesthetics: string): string {
+  if (!aesthetics.trim()) return "";
+  return [
+    "AESTHETIC & LAYOUT PRINCIPLES (project-specific):",
+    "Apply the following aesthetic standards when evaluating this UI:",
+    "",
+    aesthetics,
+    "",
+    "When reporting issues, reference which specific aesthetic principle is violated.",
+  ].join("\n");
+}

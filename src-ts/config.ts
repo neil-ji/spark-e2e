@@ -55,6 +55,7 @@ export const ConfigSchema = z.object({
   selectors: SelectorsConfigSchema.default({}),
   prompts: PromptsConfigSchema.default({}),
   cssVariables: z.array(z.string()).default([]),
+  aestheticsFile: z.string().default("AESTHETICS.md"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -73,6 +74,7 @@ const DEFAULT_CONFIG: Config = {
   },
   prompts: { strictness: "standard" },
   cssVariables: [],
+  aestheticsFile: "AESTHETICS.md",
 };
 
 // ── Cache ───────────────────────────────────────────────
@@ -125,6 +127,13 @@ function loadYamlConfig(path: string): Record<string, unknown> {
 
 // ── Build config ────────────────────────────────────────
 
+function readAestheticsFile(path: string): string {
+  // Resolve relative to cwd
+  const resolved = resolve(path);
+  if (!existsSync(resolved)) return "";
+  return readFileSync(resolved, "utf-8").trim();
+}
+
 function applyYamlToConfig(config: Config, data: Record<string, unknown>): void {
   const b = data.browser as Record<string, unknown> | undefined;
   if (b) {
@@ -165,6 +174,10 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
     if (s === "standard" || s === "strict" || s === "relaxed") {
       config.prompts.strictness = s;
     }
+  }
+
+  if (typeof data.aesthetics_file === "string") {
+    config.aestheticsFile = data.aesthetics_file as string;
   }
 }
 
@@ -270,6 +283,11 @@ export function getVlmEnv(): [string, string] {
 export function getVlmModel(defaultModel = "gpt-4o"): string {
   const c = getConfig();
   return c.vlm.model || defaultModel;
+}
+
+export function getAesthetics(): string {
+  const c = getConfig();
+  return readAestheticsFile(c.aestheticsFile);
 }
 
 export { findConfigFile };

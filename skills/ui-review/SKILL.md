@@ -106,6 +106,19 @@ spark-e2e assert "TTFB shows 0.56s"                  # value changes
 
 Assert returns `{"pass": true|false, "confidence": "high"|"medium"|"low", "observation": "...", "reasoning": "..."}`.
 
+## Aesthetic Principles
+
+Edit `AESTHETICS.md` at the project root to define reusable UI review standards. These rules are **automatically injected** into every `spark-e2e review` prompt. Add principles like:
+
+```markdown
+## Layout
+- Cards in the same row must be equal height
+- All section spacing follows 8px rhythm
+- Sidebar and content area must share the same background color
+```
+
+The file is cumulative — keep adding rules as you discover patterns. Commit to git to share with the team.
+
 ## Common Gotchas
 
 1. **Inline styles beat CSS**: Chart/animation libraries set inline styles on SVG elements. Your CSS may need `!important`.
