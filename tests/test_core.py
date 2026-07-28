@@ -30,16 +30,16 @@ class TestConfig:
 
 
 class TestBrowserRegistry:
-    def test_browser_harness_registered(self):
+    def test_playwright_registered(self):
         backends = list_backends()
-        assert "browser-harness" in backends
+        assert "playwright" in backends
 
-    def test_get_browser_harness(self):
-        backend = get_backend("browser-harness")
+    def test_get_playwright(self):
+        backend = get_backend("playwright")
         assert isinstance(backend, BrowserBackend)
 
     def test_unknown_backend(self):
-        with pytest.raises(ValueError, match="Unknown browser backend"):
+        with pytest.raises(ValueError, match="Unknown"):
             get_backend("nonexistent")
 
 

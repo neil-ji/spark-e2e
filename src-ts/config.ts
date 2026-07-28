@@ -18,7 +18,7 @@ import { z } from "zod";
 // ── Schema ─────────────────────────────────────────────
 
 const BrowserConfigSchema = z.object({
-  backend: z.string().default("browser-harness"),
+  // backend always Playwright — field kept for backward compat only
   url: z.string().default("http://localhost:5173"),
 });
 
@@ -64,7 +64,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 // ── Default config ─────────────────────────────────────
 
 const DEFAULT_CONFIG: Config = {
-  browser: { backend: "browser-harness", url: "http://localhost:5173" },
+  browser: { url: "http://localhost:5173" },
   viewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
   vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 4000 },
   selectors: {
@@ -138,7 +138,7 @@ function readAestheticsFile(path: string): string {
 function applyYamlToConfig(config: Config, data: Record<string, unknown>): void {
   const b = data.browser as Record<string, unknown> | undefined;
   if (b) {
-    if (typeof b.backend === "string") config.browser.backend = b.backend;
+    // backend removed — always Playwright
     if (typeof b.url === "string") config.browser.url = b.url;
   }
 
@@ -267,7 +267,7 @@ export function load(configPath?: string): Config {
 
   // Validate
   log(
-    `Config loaded: backend=${config.browser.backend}, ` +
+    `Config loaded: browser=playwright, ` +
       `url=${config.browser.url}, vlm=${config.vlm.provider}, model=${config.vlm.model}`
   );
 

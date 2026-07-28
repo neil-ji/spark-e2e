@@ -67,11 +67,9 @@ src/spark_e2e/                   ← Python CLI (pip channel)
 
 ### Plugin Architecture
 
-Both browser backends and VLM providers use the same registry pattern in both languages:
+**Browser**: Playwright is the only backend. It auto-resolves from project `node_modules`, global npm, or bare specifier (in that order). Run `spark-e2e setup` to install it automatically.
 
-- **Browser backends**: TypeScript `BrowserBackend` interface (6 methods), Python `BrowserBackend` ABC (6 methods). Built-in: `browser-harness` (default, spawns CLI subprocess), `playwright` (optional).
-
-- **VLM providers**: TypeScript `VLMProvider` interface (1 method: `chat`), Python `VLMProvider` ABC (1 method). Built-in: `openai-compat` (OpenAI SDK, works with any `/v1/chat/completions` endpoint).
+**VLM providers**: TypeScript `VLMProvider` interface (1 method: `chat`), Python `VLMProvider` ABC (1 method). Built-in: `openai-compat` (OpenAI SDK, works with any `/v1/chat/completions` endpoint).
 
 ### Config System (both languages)
 

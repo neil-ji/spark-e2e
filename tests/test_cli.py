@@ -31,12 +31,10 @@ class TestCLIHelp:
         assert expected in output, f"'{expected}' not found in: {output[:200]}"
 
     def test_setup_help(self):
-        """setup --help should work (even if command just points to TS CLI)."""
-        # Python CLI might not have setup, but it should handle the arg gracefully
+        """Python CLI help should list available commands."""
         result = run_cli("--help")
         output = (result.stdout or "") + (result.stderr or "")
-        # Should list available commands
-        assert "Commands" in output or "positional arguments" in output
+        assert "doctor" in output or "Commands" in output or "positional arguments" in output
 
 
 class TestCLICommands:

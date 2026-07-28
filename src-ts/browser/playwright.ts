@@ -1,53 +1,181 @@
 /**
- * Browser backend using Playwright (native Node.js).
- *
- * Install: ``npm install playwright && npx playwright install chromium``.
- * Set ``browser.backend: playwright`` in config.
+ * Playwright browser backend — the one and only.
  */
-import type { BrowserBackend, ElementRect, PageInfo, ScrollOptions, Viewport } from "./index.js";
+import type { Viewport, PageInfo, ElementRect, ScrollOptions } from "./index.js";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PlaywrightAny = any;
 
 function log(msg: string): void {
   process.stderr.write(`[spark-e2e] ${msg}\n`);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PlaywrightAny = any;
-
-export class PlaywrightBackend implements BrowserBackend {
+export class PlaywrightBrowser {
   private pw: PlaywrightAny = null;
   private browser: PlaywrightAny = null;
   private page: PlaywrightAny = null;
+  private module: PlaywrightAny = null;
 
-  private async ensureBrowser(): Promise<PlaywrightAny> {
+  // ── Lifecycle ────────────────────────────────────────
+
+  async ensurePage(): Promise<PlaywrightAny> {
     if (this.page) return this.page;
 
-    const mod = await this.loadPlaywright();
-    log("Starting Playwright browser (Chromium, headless)");
-    this.pw = { stop: async () => { await mod.chromium.stop?.(); } };
-    this.browser = await mod.chromium.launch({ headless: true });
+    this.module = await this.resolvePlaywright();
+    log("Starting Chromium (headless)");
+    this.browser = await this.module.chromium.launch({ headless: true });
     this.page = await this.browser.newPage();
     return this.page;
   }
 
+  async close(): Promise<void> {
+    try { if (this.page) await this.page.close(); } catch {}
+    try { if (this.browser) await this.browser.close(); } catch {}
+    try { if (this.pw) await this.pw.stop?.(); } catch {}
+    this.page = null;
+    this.browser = null;
+    this.module = null;
+  }
+
+  // ── Screenshot ───────────────────────────────────────
+
+  async captureScreenshot(opts?: {
+    viewport?: Viewport;
+    reload?: boolean;
+    delay?: number;
+    maxDim?: number;
+    fullPage?: boolean;
+    format?: "png" | "jpeg";
+    quality?: number;
+  }): Promise<Buffer> {
+    const page = await this.ensurePage();
+
+    if (opts?.viewport) {
+      await page.setViewportSize({
+        width: opts.viewport.width,
+        height: opts.viewport.height,
+        deviceScaleFactor: opts.viewport.deviceScaleFactor ?? 1,
+      });
+    }
+
+    if (opts?.reload !== false) {
+      await page.reload();
+      await page.waitForLoadState("networkidle");
+    }
+
+    if ((opts?.delay ?? 0) > 0) {
+      await new Promise((r) => setTimeout(r, opts!.delay! * 1000));
+    }
+
+    const screenshotOpts: Record<string, unknown> = { type: opts?.format ?? "png" };
+    if (opts?.format === "jpeg" && opts?.quality) screenshotOpts.quality = opts.quality;
+    if (opts?.fullPage) screenshotOpts.fullPage = true;
+
+    const buf = await page.screenshot(screenshotOpts);
+
+    if (opts?.maxDim) {
+      return this.resize(buf, opts.maxDim, opts.format ?? "png", opts.quality);
+    }
+    return Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  }
+
+  // ── Navigation ───────────────────────────────────────
+
+  async navigate(url: string): Promise<void> {
+    const page = await this.ensurePage();
+    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+    log(`Navigated to ${url}`);
+  }
+
+  // ── JS execution ─────────────────────────────────────
+
+  async executeJs(script: string): Promise<unknown> {
+    const page = await this.ensurePage();
+    return page.evaluate(script);
+  }
+
+  // ── Page info ────────────────────────────────────────
+
+  async getPageInfo(): Promise<PageInfo> {
+    const page = await this.ensurePage();
+    return page.evaluate(() => {
+      return {
+        url: window.location.href,
+        title: document.title,
+        scrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        contentHeight: document.documentElement.scrollHeight,
+      };
+    });
+  }
+
+  async getElementRect(selector: string): Promise<ElementRect | null> {
+    const page = await this.ensurePage();
+    return page.evaluate((sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, right: r.right, bottom: r.bottom, left: r.left };
+    }, selector);
+  }
+
+  // ── Scroll ───────────────────────────────────────────
+
+  async scroll(opts?: ScrollOptions): Promise<PageInfo> {
+    const page = await this.ensurePage();
+    if (opts) {
+      await page.evaluate((o: ScrollOptions) => {
+        window.scrollBy(o.deltaX ?? 0, o.deltaY ?? 0);
+      }, opts);
+    }
+    return this.getPageInfo();
+  }
+
+  // ── Wait ─────────────────────────────────────────────
+
+  async waitForSelector(selector: string, timeoutMs = 10000): Promise<void> {
+    const page = await this.ensurePage();
+    await page.waitForSelector(selector, { timeout: timeoutMs });
+  }
+
+  async waitForTimeout(ms: number): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms));
+  }
+
+  // ── Helpers ──────────────────────────────────────────
+
+  toDataUrl(bytes: Buffer): string {
+    return "data:image/png;base64," + bytes.toString("base64");
+  }
+
+  private async resize(buf: Buffer, maxDim: number, format: string, quality?: number): Promise<Buffer> {
+    // Resize requires sharp or canvas — for now just return the original.
+    // In the future this can use sharp or the Playwright viewport to resize.
+    log(`Resize not implemented — maxDim=${maxDim} ignored`);
+    return buf;
+  }
+
+  // ── Playwright module resolution ─────────────────────
+
   /**
    * Resolve playwright from multiple locations:
-   * 1. Project CWD (for npx / global spark-e2e + local playwright)
-   * 2. Global npm prefix (for global spark-e2e + global playwright)
-   * 3. Bare specifier (for spark-e2e installed as project dependency)
+   * 1. Project CWD — for npx spark-e2e with project-local playwright
+   * 2. Global npm prefix — for globally installed both
+   * 3. Bare specifier — for spark-e2e installed as project dependency
    */
-  private async loadPlaywright(): Promise<PlaywrightAny> {
+  private async resolvePlaywright(): Promise<PlaywrightAny> {
     const { createRequire } = await import("node:module");
     const { join } = await import("node:path");
 
     const candidates: string[] = [];
 
-    // 1. Project CWD — covers npx spark-e2e with project-local playwright
+    // 1. Project CWD
     try {
       const req = createRequire(join(process.cwd(), "package.json"));
       candidates.push(req.resolve("playwright"));
     } catch { /* not in project */ }
 
-    // 2. Global npm — covers global spark-e2e + global playwright
+    // 2. Global npm
     try {
       const { execSync } = await import("node:child_process");
       const globalRoot = execSync("npm root -g", { encoding: "utf-8", timeout: 5000 }).trim();
@@ -55,9 +183,9 @@ export class PlaywrightBackend implements BrowserBackend {
         const req = createRequire(join(globalRoot, "package.json"));
         candidates.push(req.resolve("playwright"));
       }
-    } catch { /* no global npm or no playwright there */ }
+    } catch { /* no global npm */ }
 
-    // 3. Bare specifier — covers spark-e2e installed as project dep
+    // 3. Bare specifier
     candidates.push("playwright");
 
     const errors: string[] = [];
@@ -70,117 +198,9 @@ export class PlaywrightBackend implements BrowserBackend {
     }
 
     throw new Error(
-      `Playwright not found. Install it:\n` +
-      `  npm install playwright && npx playwright install chromium\n` +
+      `Playwright not found. Run \`spark-e2e setup\` to install it,\n` +
+      `or manually: npm install -g playwright && npx playwright install chromium\n` +
       `Resolution attempts:\n${errors.map(e => "  - " + e).join("\n")}`
     );
-  }
-
-  async captureScreenshot(opts?: {
-    viewport?: Viewport;
-    reload?: boolean;
-    delay?: number;
-    maxDim?: number;
-    fullPage?: boolean;
-  }): Promise<Buffer> {
-    const page = await this.ensureBrowser();
-
-    if (opts?.viewport) {
-      await page.setViewportSize({ width: opts.viewport.width, height: opts.viewport.height });
-    }
-
-    // reload defaults to true unless explicitly disabled with --no-reload
-    if (opts?.reload !== false) {
-      await page.reload();
-      await page.waitForLoadState("networkidle");
-    }
-    // delay is independent of reload — always applied when set (seconds → ms)
-    if ((opts?.delay ?? 0) > 0) {
-      await new Promise((r) => setTimeout(r, opts!.delay! * 1000));
-    }
-
-    return page.screenshot({ type: "png", fullPage: opts?.fullPage ?? false }) as Promise<Buffer>;
-  }
-
-  async executeJs(script: string): Promise<unknown> {
-    const page = await this.ensureBrowser();
-    return page.evaluate(`(${script})`);
-  }
-
-  async navigate(url: string): Promise<void> {
-    const page = await this.ensureBrowser();
-    log(`Navigating to ${url}`);
-    await page.goto(url, { waitUntil: "networkidle" });
-  }
-
-  async getPageInfo(): Promise<PageInfo> {
-    const page = await this.ensureBrowser();
-    return page.evaluate(() => ({
-      url: window.location.href,
-      title: document.title,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      scroll_x: window.scrollX,
-      scroll_y: window.scrollY,
-    })) as Promise<PageInfo>;
-  }
-
-  async scroll(opts?: ScrollOptions): Promise<PageInfo> {
-    const page = await this.ensureBrowser();
-
-    if (opts?.selector) {
-      await page.evaluate((sel: string) => {
-        const el = document.querySelector(sel);
-        if (el) el.scrollIntoView({ behavior: "instant", block: "nearest" });
-      }, opts.selector);
-    } else {
-      const x = opts?.x ?? 0;
-      const y = opts?.y ?? 0;
-      await page.evaluate(
-        ({ px, py }: { px: number; py: number }) =>
-          window.scrollTo({ top: py, left: px, behavior: "instant" } as ScrollToOptions),
-        { px: x, py: y }
-      );
-    }
-
-    return this.getPageInfo();
-  }
-
-  async getElementRect(selector: string): Promise<ElementRect | null> {
-    const page = await this.ensureBrowser();
-    try {
-      const box = await page.locator(selector).boundingBox();
-      if (!box) return null;
-      return {
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-        top: box.y,
-        right: box.x + box.width,
-        bottom: box.y + box.height,
-        left: box.x,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  async waitForSelector(selector: string, timeoutMs = 10000): Promise<void> {
-    const page = await this.ensureBrowser();
-    await page.waitForSelector(selector, { timeout: timeoutMs });
-  }
-
-  async waitForTimeout(ms: number): Promise<void> {
-    await new Promise((r) => setTimeout(r, ms));
-  }
-
-  toDataUrl(bytes: Buffer): string {
-    return "data:image/png;base64," + bytes.toString("base64");
-  }
-
-  async close(): Promise<void> {
-    if (this.browser) await this.browser.close();
-    if (this.pw) await this.pw.stop();
   }
 }

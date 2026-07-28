@@ -34,7 +34,6 @@ export interface SetupAnswers {
   baseUrl: string;
   model: string;
   thinkingBudget: string;
-  backend: string;
   defaultUrl: string;
   viewportWidth: string;
   viewportHeight: string;
@@ -42,12 +41,12 @@ export interface SetupAnswers {
   aestheticsFile: string;
   agent: string;
   scope?: string;
+  installPlaywright?: boolean;
 }
 
 export function buildConfigFromAnswers(answers: SetupAnswers): Record<string, unknown> {
   return {
     browser: {
-      backend: answers.backend,
       url: answers.defaultUrl,
     },
     viewport: {
@@ -224,17 +223,14 @@ export async function setupCommand(opts: { dir?: string; apiKey?: string; baseUr
 
   nl();
 
-  // ── Section 2: Browser Configuration ──────────────────
+  // ── Section 2: Browser (Playwright) ───────────────────
+  const installPw = await p.confirm({
+    message: "Install Playwright globally?",
+    initialValue: true,
+  });
+
   const browserGroup = await p.group(
     {
-      backend: () =>
-        p.select({
-          message: "Browser backend",
-          options: [
-            { value: "browser-harness", label: "browser-harness (recommended)", hint: "zero dependencies, CDP-based" },
-            { value: "playwright", label: "playwright", hint: "npm install playwright required" },
-          ],
-        }),
       defaultUrl: () =>
         p.text({
           message: "Default URL to test",
@@ -320,7 +316,6 @@ export async function setupCommand(opts: { dir?: string; apiKey?: string; baseUr
   // ── Build config ─────────────────────────────────────────
   const config: Record<string, unknown> = {
     browser: {
-      backend: browserGroup.backend,
       url: browserGroup.defaultUrl,
     },
     viewport: {
@@ -373,6 +368,22 @@ export async function setupCommand(opts: { dir?: string; apiKey?: string; baseUr
   s.stop(`Configuration saved:
   ${fmtPath(yamlPath)}
   ${fmtPath(globalEnvPath)}`);
+
+  // ── Install Playwright ────────────────────────────────────
+  if (installPw) {
+    s.start("Installing Playwright globally...");
+    try {
+      const { execSync } = await import("node:child_process");
+      const npm = process.env.npm_execpath ?? "npm";
+      execSync(`${npm} install -g playwright`, { stdio: "pipe", timeout: 120000 });
+      s.message("Downloading Chromium...");
+      execSync(`npx playwright install chromium`, { stdio: "pipe", timeout: 120000 });
+      s.stop("Playwright installed ✓");
+    } catch (e) {
+      s.stop(`Playwright install failed: ${(e as Error).message}`);
+      p.log.warn("You can install manually: npm install -g playwright && npx playwright install chromium");
+    }
+  }
 
   // ── Install skills ───────────────────────────────────────
   let installedSkills: string[] = [];

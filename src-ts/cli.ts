@@ -76,23 +76,16 @@ export const AGENTS: Agent[] = [
 ];
 import { spawnSync } from "node:child_process";
 
-// Register built-in backends and providers
-import { registerBackend } from "./browser/index.js";
-import { BrowserHarnessBackend } from "./browser/browser-harness.js";
+// Providers and browser
 import { registerProvider } from "./vlm/index.js";
 import { OpenAICompatProvider, extractJson } from "./vlm/openai-compat.js";
-registerBackend("browser-harness", BrowserHarnessBackend);
-// Playwright is optional — register if importable (matching Python behavior)
-try {
-  const { PlaywrightBackend } = await import("./browser/playwright.js");
-  registerBackend("playwright", PlaywrightBackend);
-} catch {
-  // Playwright not installed — browser-harness will be the only option
-}
+import { PlaywrightBrowser } from "./browser/index.js";
 registerProvider("openai-compat", OpenAICompatProvider);
 
+const browser = new PlaywrightBrowser();
+
 import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
-import { getBackend, listBackends } from "./browser/index.js";
+// browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
 import { getReviewPrompt, getAssertPrompt, getAestheticsPrompt } from "./prompts.js";
 
@@ -107,10 +100,9 @@ async function captureAndEncode(opts?: {
   format?: "png" | "jpeg";
   quality?: number;
 }): Promise<{ dataUrl: string; buf: Buffer }> {
-  const backend = getBackend(getConfig().browser.backend);
-  const raw = await backend.captureScreenshot(opts);
+  const raw = await browser.captureScreenshot(opts);
   const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
-  return { dataUrl: backend.toDataUrl(buf), buf };
+  return { dataUrl: browser.toDataUrl(buf), buf };
 }
 
 // ── setup ─────────────────────────────────────────────────
@@ -120,6 +112,7 @@ program
   .description("Interactive setup wizard — configure VLM, browser, and install skills")
   .option("--dir <path>", "Project directory (default: current directory)")
   .action(async (opts) => {
+    const cfg = getConfig();
     const { setupCommand } = await import("./setup.js");
     await setupCommand({ dir: opts.dir });
   });
@@ -135,15 +128,15 @@ program
   .action(async (url, opts) => {
     const cfg = getConfig();
     const targetUrl = url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     if (opts.width && opts.height) {
-      await backend.captureScreenshot({
+      await browser.captureScreenshot({
         viewport: { width: opts.width, height: opts.height, deviceScaleFactor: 1 },
         reload: false,
       });
     }
-    await backend.navigate(targetUrl);
-    const info = await backend.getPageInfo();
+    await browser.navigate(targetUrl);
+    const info = await browser.getPageInfo();
     console.log(JSON.stringify(info, null, 2));
   });
 
@@ -157,8 +150,8 @@ program
   .option("--selector <css>", "CSS selector to scroll into view")
   .action(async (opts) => {
     const cfg = getConfig();
-    const backend = getBackend(cfg.browser.backend);
-    const info = await backend.scroll({ x: opts.x, y: opts.y, selector: opts.selector });
+    
+    const info = await browser.scroll({ x: opts.x, y: opts.y, selector: opts.selector });
     console.log(JSON.stringify(info, null, 2));
   });
 
@@ -177,21 +170,21 @@ program
   .action(async (opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     console.log(`Navigating to ${url} ...`);
-    await backend.navigate(url);
+    await browser.navigate(url);
 
     const viewport = opts.width && opts.height
       ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 }
       : undefined;
 
-    const png = await backend.captureScreenshot({
+    const png = await browser.captureScreenshot({
       viewport, reload: opts.reload, delay: opts.delay, fullPage: opts.fullPage ?? false,
     });
     const buf = Buffer.isBuffer(png) ? png : Buffer.from(png as ArrayBuffer);
     writeFileSync(opts.output, buf);
     console.log(`Saved ${opts.output} (${buf.length} bytes)`);
-    await backend.close();
+    await browser.close();
   });
 
 // ── inspect ──────────────────────────────────────────────
@@ -209,10 +202,10 @@ program
   .action(async (instruction, opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     const provider = getProvider(cfg.vlm.provider);
 
-    if (url) { await backend.navigate(url); }
+    if (url) { await browser.navigate(url); }
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
       reload: opts.reload,
@@ -231,7 +224,7 @@ program
 
     const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     console.log(raw);
-    await backend.close();
+    await browser.close();
   });
 
 // ── assert ───────────────────────────────────────────────
@@ -249,10 +242,10 @@ program
   .action(async (assertion, opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     const provider = getProvider(cfg.vlm.provider);
 
-    if (url) { await backend.navigate(url); }
+    if (url) { await browser.navigate(url); }
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
       reload: opts.reload,
@@ -274,7 +267,7 @@ program
     } catch {
       console.log(raw);
     }
-    await backend.close();
+    await browser.close();
   });
 
 // ── compare ──────────────────────────────────────────────
@@ -291,10 +284,10 @@ program
   .action(async (expected, opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     const provider = getProvider(cfg.vlm.provider);
 
-    if (url) { await backend.navigate(url); }
+    if (url) { await browser.navigate(url); }
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
       reload: true,
@@ -317,7 +310,7 @@ program
     } catch {
       console.log(raw);
     }
-    await backend.close();
+    await browser.close();
   });
 
 // ── review ───────────────────────────────────────────────
@@ -336,10 +329,10 @@ program
   .action(async (opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
-    const backend = getBackend(cfg.browser.backend);
+    
     const provider = getProvider(cfg.vlm.provider);
 
-    if (url) { await backend.navigate(url); }
+    if (url) { await browser.navigate(url); }
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
       reload: opts.reload,
@@ -376,7 +369,7 @@ program
     } catch {
       console.log(raw);
     }
-    await backend.close();
+    await browser.close();
   });
 
 // ── dom-verify ───────────────────────────────────────────
@@ -389,16 +382,16 @@ program
   .option("--height <px>", "Viewport height", parseInt)
   .action(async (opts) => {
     const cfg = getConfig();
-    const backend = getBackend(cfg.browser.backend);
+    
 
     if (opts.url) {
       if (opts.width && opts.height) {
-        await backend.captureScreenshot({
+        await browser.captureScreenshot({
           viewport: { width: opts.width, height: opts.height, deviceScaleFactor: 1 },
           reload: false,
         });
       }
-      await backend.navigate(opts.url);
+      await browser.navigate(opts.url);
     }
 
     const cssVarList = cfg.cssVariables.length > 0
@@ -430,9 +423,9 @@ program
   return {layout: layout, classPrefixes: Array.from(classPrefixes).sort().slice(0,30), cssVars: cssVars};
 })()`;
 
-    const result = await backend.executeJs(jsCode);
+    const result = await browser.executeJs(jsCode);
     console.log(JSON.stringify(result, null, 2));
-    await backend.close();
+    await browser.close();
   });
 
 // ── doctor ───────────────────────────────────────────────
@@ -442,6 +435,7 @@ program
   .description("Diagnose the environment")
   .option("--quick", "Skip connectivity tests")
   .action(async (opts) => {
+    const cfg = getConfig();
     console.log("spark-e2e doctor — Environment Diagnostic");
     console.log("=".repeat(50));
 
@@ -460,7 +454,7 @@ program
 
     try {
       const cfg = load();
-      console.log(`  Backend: ${cfg.browser.backend}`);
+      console.log(`  Browser: Playwright`);
       console.log(`  URL: ${cfg.browser.url}`);
       console.log(`  VLM provider: ${cfg.vlm.provider}`);
       console.log(`  VLM model: ${cfg.vlm.model}`);
@@ -471,18 +465,15 @@ program
 
     console.log();
     console.log("─ Browser ─");
-    const backends = listBackends();
-    console.log(`Available: ${backends.join(", ") || "(none)"}`);
-
-    if (backends.includes("browser-harness")) {
-      const r = spawnSync("browser-harness", ["--version"], { encoding: "utf-8", timeout: 5000 });
-      console.log(r.status === 0 ? `✓ browser-harness: ${(r.stdout ?? "").trim()}` : "✗ browser-harness not found");
-    }
+    console.log("  Backend: Playwright");
+    try {
+      const r = spawnSync("npx", ["playwright", "--version"], { encoding: "utf-8", timeout: 10000 });
+      console.log(r.status === 0 ? `  ✓ ${(r.stdout ?? "").trim()}` : "  ✗ playwright not found");
+    } catch { console.log("  ✗ playwright check failed"); }
 
     console.log();
     if (!opts.quick) {
       console.log("─ VLM ─");
-      const cfg = getConfig();
       console.log(cfg.vlm.apiKey ? "✓ API key set" : "⚠ Set SPARK_E2E_API_KEY to enable VLM");
     }
     console.log();
