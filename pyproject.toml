@@ -1,6 +1,6 @@
 [project]
 name = "spark-e2e"
-version = "0.2.0"
+version = "0.2.1"
 description = "VLM-powered visual E2E testing MCP server and CLI for browser-harness and Playwright"
 requires-python = ">=3.12"
 license = { text = "MIT" }
