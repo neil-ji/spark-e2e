@@ -1,0 +1,340 @@
+/**
+ * Interactive setup wizard for spark-e2e.
+ *
+ * Guides users through VLM config, browser config, project settings,
+ * and skill installation — all in one smooth interactive flow.
+ */
+import * as p from "@clack/prompts";
+import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { homedir } from "node:os";
+import * as yaml from "js-yaml";
+import { AGENTS } from "./cli.js";
+
+// ── Helpers ───────────────────────────────────────────────
+
+function nl(): void {
+  console.log();
+}
+
+function yamlOf(obj: Record<string, unknown>): string {
+  return yaml.dump(obj, { lineWidth: 120, noRefs: true });
+}
+
+function fmtPath(p: string): string {
+  const home = homedir();
+  if (p.startsWith(home)) return p.replace(home, "~");
+  return p;
+}
+
+// ── Agent skill installation ──────────────────────────────
+
+async function installSkills(opts: {
+  agent: string;
+  scope: string;
+  cwd: string;
+}): Promise<string[]> {
+  const { mkdirSync, existsSync, readdirSync, statSync } = await import("node:fs");
+  const { copyFileSync } = await import("node:fs");
+  const { resolve, join } = await import("node:path");
+
+  // Find skills source
+  const candidates = [
+    resolve(import.meta.dirname!, "..", "skills"),
+    resolve(import.meta.dirname!, "..", "..", "skills"),
+    join(opts.cwd, "skills"),
+  ];
+  let skillsSrc: string | null = null;
+  for (const c of candidates) {
+    try {
+      if (statSync(c).isDirectory()) {
+        skillsSrc = c;
+        break;
+      }
+    } catch { /* skip */ }
+  }
+
+  if (!skillsSrc) {
+    p.log.warn("Cannot find skills source — skipping skill installation.");
+    return [];
+  }
+
+  const home = homedir();
+  const isUser = opts.scope === "user";
+  const targets: { label: string; dir: string }[] = [];
+
+  if (opts.agent === "all") {
+    for (const a of AGENTS) {
+      const base = isUser ? resolve(home, a.userDir) : resolve(opts.cwd, a.projectDir);
+      targets.push({ label: a.label, dir: base });
+    }
+  } else {
+    const a = AGENTS.find(x => x.name === opts.agent);
+    if (!a) return [];
+    const base = isUser ? resolve(home, a.userDir) : resolve(opts.cwd, a.projectDir);
+    targets.push({ label: a.label, dir: base });
+  }
+
+  const skillNames: string[] = [];
+  for (const entry of readdirSync(skillsSrc, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      try {
+        if (statSync(join(skillsSrc!, entry.name, "SKILL.md")).isFile()) {
+          skillNames.push(entry.name);
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  for (const t of targets) {
+    mkdirSync(t.dir, { recursive: true });
+    for (const name of skillNames) {
+      const srcDir = join(skillsSrc, name);
+      const destDir = join(t.dir, name);
+      // recursive copy
+      try {
+        mkdirSync(destDir, { recursive: true });
+        for (const f of readdirSync(srcDir, { withFileTypes: true })) {
+          if (f.isFile()) {
+            copyFileSync(join(srcDir, f.name), join(destDir, f.name));
+          }
+        }
+      } catch { /* skip individual skill errors */ }
+    }
+  }
+
+  return skillNames;
+}
+
+// ── Main setup flow ───────────────────────────────────────
+
+export async function setupCommand(opts: { dir?: string; apiKey?: string; baseUrl?: string }) {
+  const cwd = process.cwd();
+
+  p.intro("spark-e2e setup — VLM-powered Visual E2E Testing");
+
+  // ── Section 1: VLM Configuration ──────────────────────
+  const vlmGroup = await p.group(
+    {
+      apiKey: () =>
+        p.password({
+          message: "VLM API Key (input hidden)",
+          validate: (v) => {
+            if (!v || v.trim().length < 3) return "API key is required";
+          },
+        }),
+      baseUrl: () =>
+        p.text({
+          message: "VLM Base URL",
+          placeholder: "https://api.openai.com/v1",
+          defaultValue: "https://api.openai.com/v1",
+        }),
+      model: () =>
+        p.text({
+          message: "Default VLM Model",
+          placeholder: "gpt-4o",
+          defaultValue: "gpt-4o",
+        }),
+      thinkingBudget: () =>
+        p.text({
+          message: "Thinking budget (tokens, 0 = disable)",
+          placeholder: "4000",
+          defaultValue: "4000",
+          validate: (v) => {
+            const n = parseInt(v ?? "", 10);
+            if (isNaN(n) || n < 0) return "Must be a non-negative number";
+          },
+        }),
+    },
+    { onCancel: () => { p.cancel("Setup cancelled."); process.exit(0); } }
+  );
+
+  nl();
+
+  // ── Section 2: Browser Configuration ──────────────────
+  const browserGroup = await p.group(
+    {
+      backend: () =>
+        p.select({
+          message: "Browser backend",
+          options: [
+            { value: "browser-harness", label: "browser-harness (recommended)", hint: "zero dependencies, CDP-based" },
+            { value: "playwright", label: "playwright", hint: "npm install playwright required" },
+          ],
+        }),
+      defaultUrl: () =>
+        p.text({
+          message: "Default URL to test",
+          placeholder: "http://localhost:5173",
+          defaultValue: "http://localhost:5173",
+        }),
+      viewportWidth: () =>
+        p.text({
+          message: "Viewport width",
+          placeholder: "1600",
+          defaultValue: "1600",
+          validate: (v) => { if (isNaN(parseInt(v ?? ""))) return "Must be a number"; },
+        }),
+      viewportHeight: () =>
+        p.text({
+          message: "Viewport height",
+          placeholder: "1200",
+          defaultValue: "1200",
+          validate: (v) => { if (isNaN(parseInt(v ?? ""))) return "Must be a number"; },
+        }),
+    },
+    { onCancel: () => { p.cancel("Setup cancelled."); process.exit(0); } }
+  );
+
+  nl();
+
+  // ── Section 3: Project Settings ───────────────────────
+  const projectGroup = await p.group(
+    {
+      strictness: () =>
+        p.select({
+          message: "Review strictness",
+          options: [
+            { value: "standard", label: "standard (recommended)", hint: "balanced" },
+            { value: "strict", label: "strict", hint: "by-the-book" },
+            { value: "relaxed", label: "relaxed", hint: "tolerant of variation" },
+          ],
+        }),
+      aestheticsFile: () =>
+        p.text({
+          message: "Aesthetics file path",
+          placeholder: "AESTHETICS.md",
+          defaultValue: "AESTHETICS.md",
+        }),
+    },
+    { onCancel: () => { p.cancel("Setup cancelled."); process.exit(0); } }
+  );
+
+  nl();
+
+  // ── Section 4: Skill Installation ──────────────────────
+  p.log.step("Skill Installation — make spark-e2e skills available in your AI agent");
+
+  const skillGroup = await p.group(
+    {
+      agent: () =>
+        p.select({
+          message: "Install skills for which agent?",
+          options: [
+            { value: "claude", label: "Claude Code", hint: ".claude/skills/" },
+            { value: "codex", label: "OpenAI Codex", hint: ".agents/skills/" },
+            { value: "spark-hub", label: "Spark Hub", hint: ".spark/skills/ or ~/.spark/config/custom-skills/" },
+            { value: "qoder", label: "Qoder", hint: ".qoder/skills/" },
+            { value: "trae", label: "Trae", hint: ".trae/skills/" },
+            { value: "all", label: "All agents", hint: "install everywhere" },
+            { value: "skip", label: "Skip", hint: "no skill installation" },
+          ],
+        }),
+      scope: ({ results }) => {
+        if (results.agent === "skip") return undefined;
+        return p.select({
+          message: "Install scope",
+          options: [
+            { value: "project", label: "project", hint: `→ ${fmtPath(resolve(cwd, ".claude/skills/"))}` },
+            { value: "user", label: "user (global)", hint: "→ ~/.claude/skills/ (all projects)" },
+          ],
+        });
+      },
+    },
+    { onCancel: () => { p.cancel("Setup cancelled."); process.exit(0); } }
+  );
+
+  // ── Build config ─────────────────────────────────────────
+  const config: Record<string, unknown> = {
+    browser: {
+      backend: browserGroup.backend,
+      url: browserGroup.defaultUrl,
+    },
+    viewport: {
+      width: parseInt(browserGroup.viewportWidth, 10),
+      height: parseInt(browserGroup.viewportHeight, 10),
+    },
+    vlm: {
+      api_key: vlmGroup.apiKey,
+      base_url: vlmGroup.baseUrl,
+      model: vlmGroup.model,
+      thinking_budget: parseInt(vlmGroup.thinkingBudget, 10),
+    },
+    prompts: {
+      strictness: projectGroup.strictness,
+    },
+    aesthetics_file: projectGroup.aestheticsFile,
+  };
+
+  // ── Save files ───────────────────────────────────────────
+  const s = p.spinner();
+
+  // Write project config
+  const yamlPath = opts.dir ? resolve(opts.dir, ".spark-e2e.yaml") : resolve(cwd, ".spark-e2e.yaml");
+  const targetDir = opts.dir || cwd;
+
+  // Determine if we should write .spark-e2e.yaml (project) or ~/.spark-e2e/.env (global)
+  const scope = skillGroup.scope ?? "project";
+  const isUserScope = scope === "user";
+
+  s.start("Writing configuration files...");
+
+  // Always write project-level config
+  writeFileSync(yamlPath, `# spark-e2e configuration — generated by \`spark-e2e setup\`\n# See https://github.com/neilji/spark-e2e for full documentation\n\n${yamlOf(config)}`, "utf-8");
+
+  // Write API key to global .env for security (never in project YAML)
+  const globalEnvDir = resolve(homedir(), ".spark-e2e");
+  mkdirSync(globalEnvDir, { recursive: true });
+  const globalEnvPath = resolve(globalEnvDir, ".env");
+  const envLines: string[] = [];
+  if (existsSync(globalEnvPath)) {
+    // Preserve existing env vars not related to these keys
+  }
+  envLines.push(`# spark-e2e global config — generated by \`spark-e2e setup\``);
+  envLines.push(`SPARK_E2E_API_KEY=${vlmGroup.apiKey}`);
+  envLines.push(`SPARK_E2E_BASE_URL=${vlmGroup.baseUrl}`);
+  envLines.push(`SPARK_E2E_MODEL=${vlmGroup.model}`);
+  envLines.push(`SPARK_E2E_THINKING_BUDGET=${vlmGroup.thinkingBudget}`);
+  writeFileSync(globalEnvPath, envLines.join("\n") + "\n", "utf-8");
+
+  s.stop(`Configuration saved:
+  ${fmtPath(yamlPath)}
+  ${fmtPath(globalEnvPath)}`);
+
+  // ── Install skills ───────────────────────────────────────
+  let installedSkills: string[] = [];
+  if (skillGroup.agent !== "skip") {
+    s.start("Installing skills...");
+    installedSkills = await installSkills({
+      agent: skillGroup.agent as string,
+      scope: scope as string,
+      cwd: targetDir,
+    });
+    if (installedSkills.length > 0) {
+      s.stop(`Skills installed (${skillGroup.agent}, ${scope} scope)`);
+    } else {
+      s.stop("No skills installed (source not found)");
+    }
+  }
+
+  // ── Outro ────────────────────────────────────────────────
+  nl();
+  p.outro("spark-e2e is ready!");
+
+  const boxWidth = 50;
+  const line = "─".repeat(boxWidth);
+  console.log(`  ${line}`);
+  console.log(`  Next steps:`);
+  console.log();
+  console.log(`    spark-e2e doctor                Verify your setup`);
+  console.log(`    spark-e2e review --url ${browserGroup.defaultUrl}    Run first visual review`);
+  console.log();
+  if (installedSkills.length > 0) {
+    console.log(`  Slash commands:`);
+    for (const name of installedSkills) {
+      console.log(`    /${name}`);
+    }
+    console.log();
+  }
+  console.log(`  ${line}`);
+}

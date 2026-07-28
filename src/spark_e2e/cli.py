@@ -1,7 +1,7 @@
 """CLI entry point for spark-e2e.
 
 Commands:
-    init       Copy skills to .claude/skills/
+    setup      Interactive configuration wizard (TS CLI only — run `spark-e2e setup`)
     navigate   Load a URL in the browser
     snapshot   Capture a browser screenshot
     inspect    Free-form VLM screenshot analysis
@@ -18,114 +18,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-
-AGENTS = [
-    {"name": "claude", "label": "Claude Code", "project_dir": ".claude/skills", "user_dir": ".claude/skills", "detect_dirs": [".claude"]},
-    {"name": "codex", "label": "OpenAI Codex", "project_dir": ".agents/skills", "user_dir": ".agents/skills", "detect_dirs": [".agents", ".codex"]},
-    {"name": "qoder", "label": "Qoder", "project_dir": ".qoder/skills", "user_dir": ".qoder/skills", "detect_dirs": [".qoder"]},
-    {"name": "trae", "label": "Trae", "project_dir": ".trae/skills", "user_dir": ".trae/skills", "detect_dirs": [".trae", ".traecli"]},
-    {"name": "spark-hub", "label": "Spark Hub", "project_dir": ".spark/skills", "user_dir": ".spark/config/custom-skills", "detect_dirs": [".spark"]},
-]
-
-
-def cmd_init(args: argparse.Namespace) -> None:
-    """Copy spark-e2e skills into an AI coding agent's skills directory."""
-    import shutil
-
-    home = Path.home()
-    cwd = Path.cwd()
-    is_user = getattr(args, "scope", "project") == "user"
-
-    # Find skills source — check multiple locations
-    skills_src = None
-    candidates = [
-        # 1. Repo layout (editable install or clone): skills/ next to src/
-        Path(__file__).resolve().parent.parent.parent / "skills",
-        # 2. Installed package data (wheel install)
-        Path(__file__).resolve().parent / "_skills",
-        # 3. CWD (user running from repo root)
-        cwd / "skills",
-    ]
-    for candidate in candidates:
-        if candidate.is_dir():
-            skills_src = candidate
-            break
-
-    if skills_src is None:
-        print("ERROR: Cannot find spark-e2e skills source.")
-        print("Install with: pip install spark-e2e")
-        print("Or clone the repo and run from the project root.")
-        print("Or use the plugin marketplace:")
-        print("  /plugin marketplace add neilji/spark-e2e")
-        print("  /plugin install spark-e2e-skills@spark-e2e")
-        sys.exit(1)
-
-    # Determine targets — same logic as the TypeScript CLI
-    targets: list[dict] = []
-
-    if args.dir:
-        targets.append({"label": "custom", "dir": Path(args.dir)})
-    elif getattr(args, "all", False):
-        for a in AGENTS:
-            base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
-            targets.append({"label": a["label"], "dir": base})
-    elif args.agent:
-        a = next((x for x in AGENTS if x["name"] == args.agent), None)
-        if a is None:
-            print(f"Unknown agent: {args.agent}. Supported: {', '.join(x['name'] for x in AGENTS)}")
-            sys.exit(1)
-        base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
-        targets.append({"label": a["label"], "dir": base})
-    else:
-        # Auto-detect: check which agent dirs exist in the project
-        detected = [
-            a for a in AGENTS
-            if any((cwd / d).is_dir() for d in a.get("detect_dirs", []))
-        ]
-        if detected:
-            for a in detected:
-                base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
-                targets.append({"label": a["label"], "dir": base})
-        else:
-            # Default: Claude Code
-            base = (home / ".claude/skills") if is_user else (cwd / ".claude/skills")
-            targets.append({"label": "Claude Code (default)", "dir": base})
-
-    # Collect skill names
-    skill_names = sorted(
-        e.name for e in skills_src.iterdir()
-        if e.is_dir() and (e / "SKILL.md").exists()
-    )
-
-    if not skill_names:
-        print("No skills found in source directory.")
-        sys.exit(1)
-
-    # Install
-    print(f"spark-e2e init")
-    print(f"Source: {skills_src}")
-    if is_user:
-        print("Scope: user (installing to home directory)")
-
-    for t in targets:
-        print(f"── {t['label']} ──")
-        print(f"   {t['dir']}/")
-        t["dir"].mkdir(parents=True, exist_ok=True)
-        for name in skill_names:
-            src = skills_src / name
-            dest = t["dir"] / name
-            if dest.exists():
-                shutil.rmtree(str(dest))
-            shutil.copytree(str(src), str(dest))
-            print(f"   ✓ {name}")
-        print()
-
-    scope_label = "globally (all projects)" if is_user else f"in {cwd}"
-    print(f"Done. {len(skill_names)} skills installed {scope_label}.")
-    print()
-    print("Skills available as slash commands:")
-    for name in skill_names:
-        print(f"  /{name}")
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -352,15 +244,6 @@ def main() -> None:
         description="VLM-powered visual E2E testing CLI",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # init
-    p_init = subparsers.add_parser("init", help="Set up spark-e2e skills for AI coding agents")
-    p_init.add_argument("--agent", help=f"Target a specific agent: {', '.join(a['name'] for a in AGENTS)}")
-    p_init.add_argument("--all", action="store_true", help="Install for all supported agents")
-    p_init.add_argument("--scope", choices=["project", "user"], default="project",
-                        help="Install scope: project (default) or user")
-    p_init.add_argument("--dir", help="Custom target directory (overrides agent detection)")
-    p_init.set_defaults(func=cmd_init)
 
     # doctor
     p_doctor = subparsers.add_parser("doctor", help="Diagnose environment")

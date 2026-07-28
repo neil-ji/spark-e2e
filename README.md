@@ -6,11 +6,8 @@ VLM-powered visual E2E testing for the web.
 ## Quick Start
 
 ```bash
-# Install
-npx spark-e2e init                    # auto-detect agent, project scope
-
-# Configure VLM (saved globally to ~/.spark-e2e/.env)
-spark-e2e init --api-key "sk-..." --base-url "https://api.openai.com/v1"
+# Interactive setup — configure everything in one go
+npx spark-e2e setup
 
 # Verify
 spark-e2e doctor
@@ -24,11 +21,8 @@ spark-e2e assert "Two cards have equal height" --url http://localhost:5173
 
 | Command | What it does |
 |---|---|
-| `spark-e2e init` | Set up skills + config for AI agents |
-| `spark-e2e init --all --scope user` | Install for all agents globally |
-| `spark-e2e init --agent codex` | Install for a specific agent |
-| `spark-e2e init --agent spark-hub` | Install for spark-hub (~/.spark/config/custom-skills/) |
-| `spark-e2e init --api-key <k> --base-url <u>` | Configure VLM credentials |
+| `spark-e2e setup` | Interactive wizard — config + skill install |
+| `spark-e2e doctor` | Diagnose environment |
 | `spark-e2e navigate <url>` | Load a page in the browser |
 | `spark-e2e snapshot --url <url>` | Capture a screenshot |
 | `spark-e2e inspect "<prompt>" --url <url>` | Ask a VLM about the page |

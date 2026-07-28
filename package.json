@@ -54,6 +54,7 @@
     "provenance": "true"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "commander": "^13.1.0",
     "dotenv": "^16.4.0",
     "js-yaml": "^4.1.0",

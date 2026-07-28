@@ -14,7 +14,7 @@ The CLI handles browser automation and VLM analysis — no MCP server needed.
 
 ```bash
 # One-time setup
-npx spark-e2e init          # (or pip install spark-e2e && spark-e2e init)
+npx spark-e2e setup         # interactive wizard (config + skill install)
 export SPARK_E2E_API_KEY="your-key"
 export SPARK_E2E_BASE_URL="https://your-vlm/v1"
 ```
