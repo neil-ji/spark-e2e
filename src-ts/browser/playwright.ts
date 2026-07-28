@@ -21,21 +21,59 @@ export class PlaywrightBackend implements BrowserBackend {
   private async ensureBrowser(): Promise<PlaywrightAny> {
     if (this.page) return this.page;
 
-    let mod;
-    try {
-      // playwright is an optional peer dependency
-      mod = await import("playwright");
-    } catch {
-      throw new Error(
-        "Playwright is not installed. Run: npm install playwright && npx playwright install chromium"
-      );
-    }
-
+    const mod = await this.loadPlaywright();
     log("Starting Playwright browser (Chromium, headless)");
     this.pw = { stop: async () => { await mod.chromium.stop?.(); } };
     this.browser = await mod.chromium.launch({ headless: true });
     this.page = await this.browser.newPage();
     return this.page;
+  }
+
+  /**
+   * Resolve playwright from multiple locations:
+   * 1. Project CWD (for npx / global spark-e2e + local playwright)
+   * 2. Global npm prefix (for global spark-e2e + global playwright)
+   * 3. Bare specifier (for spark-e2e installed as project dependency)
+   */
+  private async loadPlaywright(): Promise<PlaywrightAny> {
+    const { createRequire } = await import("node:module");
+    const { join } = await import("node:path");
+
+    const candidates: string[] = [];
+
+    // 1. Project CWD — covers npx spark-e2e with project-local playwright
+    try {
+      const req = createRequire(join(process.cwd(), "package.json"));
+      candidates.push(req.resolve("playwright"));
+    } catch { /* not in project */ }
+
+    // 2. Global npm — covers global spark-e2e + global playwright
+    try {
+      const { execSync } = await import("node:child_process");
+      const globalRoot = execSync("npm root -g", { encoding: "utf-8", timeout: 5000 }).trim();
+      if (globalRoot) {
+        const req = createRequire(join(globalRoot, "package.json"));
+        candidates.push(req.resolve("playwright"));
+      }
+    } catch { /* no global npm or no playwright there */ }
+
+    // 3. Bare specifier — covers spark-e2e installed as project dep
+    candidates.push("playwright");
+
+    const errors: string[] = [];
+    for (const c of candidates) {
+      try {
+        return await import(c);
+      } catch (e) {
+        errors.push(`${c}: ${(e as Error).message}`);
+      }
+    }
+
+    throw new Error(
+      `Playwright not found. Install it:\n` +
+      `  npm install playwright && npx playwright install chromium\n` +
+      `Resolution attempts:\n${errors.map(e => "  - " + e).join("\n")}`
+    );
   }
 
   async captureScreenshot(opts?: {
