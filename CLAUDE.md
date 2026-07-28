@@ -116,9 +116,36 @@ The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skil
 
 ### Testing
 
-**Python**: `pytest tests/` — 13 tests: config defaults/loading, browser registry, VLM registry, extractJson edge cases.
+```bash
+npm test                       # TypeScript (vitest, 103 tests)
+pytest tests/                  # Python (25 tests)
+```
 
-**TypeScript**: `npx tsc --noEmit` — full type checking. No runtime test suite yet.
+### Release
+
+Release is fully automated via GitHub Actions + OIDC (trusted publishing). No local credentials needed.
+
+**How to release:**
+```bash
+# 1. Bump version (sync all three files)
+npm version <version> --no-git-tag-version
+sed -i '' 's/version = "X.Y.Z"/version = "<new>"/' pyproject.toml
+sed -i '' 's/__version__ = "X.Y.Z"/__version__ = "<new>"/' src/spark_e2e/__init__.py
+
+# 2. Commit, tag, push — CI handles the rest
+git add -A && git commit -m "chore: bump version to <new>"
+git tag v<new> && git push origin master v<new>
+```
+
+**What CI does:**
+- `v*` tag triggers `.github/workflows/publish.yml`
+- Runs verify (build + quick smoke), then `npm publish --provenance`
+- PyPI publish is handled separately (if configured)
+
+**Gotchas:**
+- npm does NOT allow republishing the same version. If a publish fails mid-flight, bump to the next patch.
+- `package.json` `repository.url` must match the GitHub repo exactly (`neil-ji/spark-e2e`, not `neilji/...`) or OIDC provenance validation fails.
+- Never commit `.spark-e2e.yaml`, `.claude/skills/`, or `.spark/skills/` — they're generated and gitignored.
 
 ### Common Gotchas
 
