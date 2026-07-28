@@ -53,6 +53,7 @@ class PlaywrightBackend(BrowserBackend):
         reload: bool = False,
         delay: float = 0.3,
         max_dim: int = 1800,
+        full_page: bool = False,
     ) -> bytes:
         self._ensure_browser()
 
@@ -69,7 +70,7 @@ class PlaywrightBackend(BrowserBackend):
                 import time
                 time.sleep(delay)
 
-        png_bytes = self._page.screenshot(type="png", full_page=False)
+        png_bytes = self._page.screenshot(type="png", full_page=full_page)
 
         # Scale down if needed (simple PIL-free approach: just return as-is for now)
         return png_bytes
@@ -93,6 +94,32 @@ class PlaywrightBackend(BrowserBackend):
             scroll_x: window.scrollX,
             scroll_y: window.scrollY,
         })""")
+
+    def scroll(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        selector: str | None = None,
+    ) -> dict:
+        """Scroll the page and return updated page info."""
+        self._ensure_browser()
+
+        if selector:
+            self._page.evaluate(
+                """(sel) => {
+                    const el = document.querySelector(sel);
+                    if (el) el.scrollIntoView({behavior: 'instant', block: 'nearest'});
+                }""",
+                selector,
+            )
+        else:
+            _x = x or 0
+            _y = y or 0
+            self._page.evaluate(
+                f"window.scrollTo({{top: {_y}, left: {_x}, behavior: 'instant'}});"
+            )
+
+        return self.get_page_info()
 
     def get_element_rect(self, selector: str) -> dict | None:
         self._ensure_browser()

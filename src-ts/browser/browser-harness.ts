@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BrowserBackend, PageInfo, Viewport } from "./index.js";
+import type { BrowserBackend, PageInfo, ScrollOptions, Viewport } from "./index.js";
 
 function log(msg: string): void {
   process.stderr.write(`[spark-e2e] ${msg}\n`);
@@ -42,6 +42,7 @@ export class BrowserHarnessBackend implements BrowserBackend {
     reload?: boolean;
     delay?: number;
     maxDim?: number;
+    fullPage?: boolean;
   }): Promise<Buffer> {
     const tmpDir = mkdtempSync(join(tmpdir(), "spark-e2e-"));
     const tmpPath = join(tmpDir, "screenshot.png");
@@ -66,7 +67,8 @@ export class BrowserHarnessBackend implements BrowserBackend {
     }
 
     const maxDim = opts?.maxDim ?? 1800;
-    commands.push(`capture_screenshot('${tmpPath}', max_dim=${maxDim})`);
+    const fullArg = opts?.fullPage ? ", full=True" : "";
+    commands.push(`capture_screenshot('${tmpPath}', max_dim=${maxDim}${fullArg})`);
 
     if (opts?.viewport) {
       commands.push("cdp('Emulation.clearDeviceMetricsOverride')");
@@ -132,6 +134,35 @@ export class BrowserHarnessBackend implements BrowserBackend {
     ].join("\n");
 
     const { stdout } = runBrowserHarness(script, this.timeout);
+    const start = stdout.indexOf("__BH_RESULT__");
+    const end = stdout.indexOf("__BH_END__");
+    if (start >= 0 && end > start) {
+      return JSON.parse(stdout.slice(start + 14, end)) as PageInfo;
+    }
+    return { url: "", title: "", width: 0, height: 0, scroll_x: 0, scroll_y: 0 };
+  }
+
+  async scroll(opts?: ScrollOptions): Promise<PageInfo> {
+    let scrollJs: string;
+    if (opts?.selector) {
+      scrollJs = [
+        `var el = document.querySelector(${JSON.stringify(opts.selector)});`,
+        "if (el) el.scrollIntoView({behavior: 'instant', block: 'nearest'});",
+      ].join("\n");
+    } else {
+      const x = opts?.x ?? 0;
+      const y = opts?.y ?? 0;
+      scrollJs = `window.scrollTo({top: ${y}, left: ${x}, behavior: 'instant'});`;
+    }
+
+    const pyLines = [
+      "import json",
+      `js(${JSON.stringify(scrollJs)})`,
+      "info = page_info()",
+      'print("__BH_RESULT__" + json.dumps(info, default=str) + "__BH_END__")',
+    ];
+
+    const { stdout } = runBrowserHarness(pyLines.join("\n"), this.timeout);
     const start = stdout.indexOf("__BH_RESULT__");
     const end = stdout.indexOf("__BH_END__");
     if (start >= 0 && end > start) {

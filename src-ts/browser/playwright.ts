@@ -4,7 +4,7 @@
  * Install: ``npm install playwright && npx playwright install chromium``.
  * Set ``browser.backend: playwright`` in config.
  */
-import type { BrowserBackend, ElementRect, PageInfo, Viewport } from "./index.js";
+import type { BrowserBackend, ElementRect, PageInfo, ScrollOptions, Viewport } from "./index.js";
 
 function log(msg: string): void {
   process.stderr.write(`[spark-e2e] ${msg}\n`);
@@ -43,6 +43,7 @@ export class PlaywrightBackend implements BrowserBackend {
     reload?: boolean;
     delay?: number;
     maxDim?: number;
+    fullPage?: boolean;
   }): Promise<Buffer> {
     const page = await this.ensureBrowser();
 
@@ -58,7 +59,7 @@ export class PlaywrightBackend implements BrowserBackend {
       }
     }
 
-    return page.screenshot({ type: "png", fullPage: false }) as Promise<Buffer>;
+    return page.screenshot({ type: "png", fullPage: opts?.fullPage ?? false }) as Promise<Buffer>;
   }
 
   async executeJs(script: string): Promise<unknown> {
@@ -82,6 +83,27 @@ export class PlaywrightBackend implements BrowserBackend {
       scroll_x: window.scrollX,
       scroll_y: window.scrollY,
     })) as Promise<PageInfo>;
+  }
+
+  async scroll(opts?: ScrollOptions): Promise<PageInfo> {
+    const page = await this.ensureBrowser();
+
+    if (opts?.selector) {
+      await page.evaluate((sel: string) => {
+        const el = document.querySelector(sel);
+        if (el) el.scrollIntoView({ behavior: "instant", block: "nearest" });
+      }, opts.selector);
+    } else {
+      const x = opts?.x ?? 0;
+      const y = opts?.y ?? 0;
+      await page.evaluate(
+        ({ px, py }: { px: number; py: number }) =>
+          window.scrollTo({ top: py, left: px, behavior: "instant" } as ScrollToOptions),
+        { px: x, py: y }
+      );
+    }
+
+    return this.getPageInfo();
   }
 
   async getElementRect(selector: string): Promise<ElementRect | null> {

@@ -149,6 +149,20 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print("Done.")
 
 
+def cmd_scroll(args: argparse.Namespace) -> None:
+    """Scroll the page via CLI."""
+    import json as _json
+
+    from spark_e2e.browser import get_backend
+    from spark_e2e.config import load
+
+    cfg = load()
+    backend = get_backend(cfg.browser.backend)
+
+    info = backend.scroll(x=args.x, y=args.y, selector=args.selector)
+    print(_json.dumps(info, ensure_ascii=False, indent=2))
+
+
 def cmd_snapshot(args: argparse.Namespace) -> None:
     """Capture a screenshot via CLI."""
     from spark_e2e.browser import get_backend
@@ -166,7 +180,10 @@ def cmd_snapshot(args: argparse.Namespace) -> None:
         viewport = {"width": args.width, "height": args.height, "deviceScaleFactor": 1}
 
     print("Capturing screenshot ...")
-    png = backend.capture_screenshot(viewport=viewport, reload=args.reload, delay=args.delay)
+    png = backend.capture_screenshot(
+        viewport=viewport, reload=args.reload, delay=args.delay,
+        full_page=args.full_page or False,
+    )
 
     output = args.output or "/tmp/spark-e2e-snapshot.png"
     Path(output).write_bytes(png)
@@ -302,7 +319,15 @@ def main() -> None:
     p_snap.add_argument("--height", type=int, help="Viewport height")
     p_snap.add_argument("--reload", action="store_true", default=True, help="Reload page before capture")
     p_snap.add_argument("--delay", type=float, default=0.3, help="Delay after reload (seconds)")
+    p_snap.add_argument("--full-page", action="store_true", help="Capture the entire scrollable page")
     p_snap.set_defaults(func=cmd_snapshot)
+
+    # scroll
+    p_scroll = subparsers.add_parser("scroll", help="Scroll the page")
+    p_scroll.add_argument("--x", type=int, help="Horizontal scroll position (px)")
+    p_scroll.add_argument("--y", type=int, help="Vertical scroll position (px)")
+    p_scroll.add_argument("--selector", help="CSS selector to scroll into view")
+    p_scroll.set_defaults(func=cmd_scroll)
 
     # assert
     p_assert = subparsers.add_parser("assert", help="Run a visual assertion")

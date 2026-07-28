@@ -306,6 +306,21 @@ program
     console.log(JSON.stringify(info, null, 2));
   });
 
+// ── scroll ────────────────────────────────────────────────
+
+program
+  .command("scroll")
+  .description("Scroll the page (handles lazy-loaded content)")
+  .option("--x <px>", "Horizontal scroll position", parseInt)
+  .option("--y <px>", "Vertical scroll position", parseInt)
+  .option("--selector <css>", "CSS selector to scroll into view")
+  .action(async (opts) => {
+    const cfg = getConfig();
+    const backend = getBackend(cfg.browser.backend);
+    const info = await backend.scroll({ x: opts.x, y: opts.y, selector: opts.selector });
+    console.log(JSON.stringify(info, null, 2));
+  });
+
 // ── snapshot ─────────────────────────────────────────────
 
 program
@@ -317,6 +332,7 @@ program
   .option("--height <px>", "Viewport height", parseInt)
   .option("--no-reload", "Skip reload before capture")
   .option("--delay <s>", "Delay after reload (seconds)", parseFloat, 0.3)
+  .option("--full-page", "Capture the entire scrollable page")
   .action(async (opts) => {
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
@@ -328,7 +344,9 @@ program
       ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 }
       : undefined;
 
-    const png = await backend.captureScreenshot({ viewport, reload: opts.reload, delay: opts.delay });
+    const png = await backend.captureScreenshot({
+      viewport, reload: opts.reload, delay: opts.delay, fullPage: opts.fullPage ?? false,
+    });
     const buf = Buffer.isBuffer(png) ? png : Buffer.from(png as ArrayBuffer);
     writeFileSync(opts.output, buf);
     console.log(`Saved ${opts.output} (${buf.length} bytes)`);

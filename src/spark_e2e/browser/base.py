@@ -10,7 +10,7 @@ class BrowserBackend(ABC):
     Implement this class to add support for a new browser automation tool
     (Playwright, Puppeteer, Selenium, etc.).
 
-    Subclasses must implement all 6 abstract methods.
+    Subclasses must implement all 7 abstract methods.
     """
 
     @abstractmethod
@@ -20,6 +20,7 @@ class BrowserBackend(ABC):
         reload: bool = False,
         delay: float = 0.3,
         max_dim: int = 1800,
+        full_page: bool = False,
     ) -> bytes:
         """Capture the current page as PNG bytes.
 
@@ -29,6 +30,7 @@ class BrowserBackend(ABC):
             reload: If True, reload the page before capturing.
             delay: Seconds to wait after reload for layout to settle.
             max_dim: If the image exceeds this size on any axis, scale it down.
+            full_page: If True, capture the entire scrollable page.
 
         Returns:
             PNG image bytes.
@@ -75,6 +77,25 @@ class BrowserBackend(ABC):
         Returns:
             A dict with x, y, width, height, top, right, bottom, left,
             or None if the element was not found.
+        """
+        ...
+
+    @abstractmethod
+    def scroll(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        selector: str | None = None,
+    ) -> dict:
+        """Scroll the page to a position or element.
+
+        Args:
+            x: Horizontal scroll target in pixels.
+            y: Vertical scroll target in pixels.
+            selector: CSS selector for element to scroll into view.
+
+        Returns:
+            A dict with keys: url, title, width, height, scroll_x, scroll_y.
         """
         ...
 

@@ -22,7 +22,12 @@ spark-e2e doctor       # verify: Node.js ✓, browser-harness ✓, API key ✓
 
 ```bash
 spark-e2e navigate "$ARGUMENTS"
+# Scroll to trigger lazy content, then capture full page
+spark-e2e scroll --y 9999 --selector ".content"
+spark-e2e scroll --y 0
 spark-e2e snapshot --output /tmp/e2e-baseline.png --url "$ARGUMENTS"
+# Or capture full scrollable page in one shot:
+spark-e2e snapshot --full-page --output /tmp/e2e-baseline.png --url "$ARGUMENTS"
 ```
 
 ### Phase 2 — Visual Review
@@ -162,7 +167,7 @@ With config in place, `--url` becomes optional.
 
 1. **Dynamic data changes** — Assert on structure (labels, layout, visibility), not specific values.
 2. **Animation timing** — Wait for transitions; use `--delay 0.5` for animated pages.
-3. **Lazy loading** — Scroll to trigger lazy images/components before review.
+3. **Lazy loading** — Use `spark-e2e scroll --y 9999` to trigger lazy content before review. Wait with `--delay 1` if needed. Use `spark-e2e snapshot --full-page` to capture the full document.
 4. **Dark mode** — Test both themes if applicable.
 5. **VLM inconsistency** — Run critical assertions 2-3 times and require majority agreement.
 6. **Page not loaded** — Always `spark-e2e navigate` before review/assert/snapshot if the browser session is fresh.

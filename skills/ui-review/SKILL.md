@@ -32,6 +32,16 @@ spark-e2e navigate "$ARGUMENTS"
 spark-e2e snapshot --output /tmp/baseline.png --url "$ARGUMENTS"
 ```
 
+For pages with scrollable content, scroll before capturing to ensure lazy-loaded sections are visible:
+
+```bash
+# Scroll to bottom (triggers lazy loading), then back to top
+spark-e2e scroll --y 9999
+spark-e2e scroll --y 0
+# Or capture the full page in one shot
+spark-e2e snapshot --full-page --output /tmp/baseline.png --url "$ARGUMENTS"
+```
+
 ### Phase 1 — Broad Inspect
 
 Run a comprehensive visual review. Choose focus based on the user's concern:
@@ -109,3 +119,5 @@ Assert returns `{"pass": true|false, "confidence": "high"|"medium"|"low", "obser
 5. **`aria-current` dual sources**: Component library nav + router link may independently set `aria-current`. Check they agree.
 
 6. **SVG viewBox clipping**: SVG defaults to `overflow: hidden`. Labels at negative y are invisible.
+
+7. **Scrollable content / lazy loading**: Use `spark-e2e scroll --y 0` or `spark-e2e scroll --selector <css>` before screenshot to bring content into viewport. Use `spark-e2e snapshot --full-page` to capture everything at once.

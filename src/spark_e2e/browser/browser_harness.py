@@ -39,6 +39,7 @@ class BrowserHarnessBackend(BrowserBackend):
         reload: bool = False,
         delay: float = 0.3,
         max_dim: int = 1800,
+        full_page: bool = False,
     ) -> bytes:
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         tmp_path = tmp.name
@@ -64,7 +65,8 @@ class BrowserHarnessBackend(BrowserBackend):
                 commands.append(f"import time; time.sleep({delay})")
 
         # Capture screenshot
-        commands.append(f"capture_screenshot('{tmp_path}', max_dim={max_dim})")
+        full_arg = ", full=True" if full_page else ""
+        commands.append(f"capture_screenshot('{tmp_path}', max_dim={max_dim}{full_arg})")
 
         # Restore viewport
         if viewport:
@@ -179,6 +181,50 @@ class BrowserHarnessBackend(BrowserBackend):
         if start >= 0 and end > start:
             return json.loads(output[start + 14 : end])
         return {"error": "could not parse page_info output"}
+
+    def scroll(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        selector: str | None = None,
+    ) -> dict:
+        """Scroll the page via JS and return updated page info."""
+        if selector:
+            scroll_js = (
+                f"var el = document.querySelector({selector!r});"
+                "if (el) el.scrollIntoView({behavior: 'instant', block: 'nearest'});"
+            )
+        else:
+            _x = x or 0
+            _y = y or 0
+            scroll_js = f"window.scrollTo({{top: {_y}, left: {_x}, behavior: 'instant'}});"
+
+        py_lines = [
+            "import json",
+            f"js({json.dumps(scroll_js)})",
+            "info = page_info()",
+            'print("__BH_RESULT__" + json.dumps(info, default=str) + "__BH_END__")',
+        ]
+        py_script = "\n".join(py_lines)
+
+        result = subprocess.run(
+            ["browser-harness"],
+            input=py_script,
+            capture_output=True,
+            text=True,
+            timeout=self._timeout,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"browser-harness scroll failed with code {result.returncode}: "
+                f"{result.stderr.strip()}"
+            )
+        output = result.stdout
+        start = output.find("__BH_RESULT__")
+        end = output.find("__BH_END__")
+        if start >= 0 and end > start:
+            return json.loads(output[start + 14 : end])
+        return {"error": "could not parse scroll page_info output"}
 
     def get_element_rect(self, selector: str) -> dict | None:
         js_code = (

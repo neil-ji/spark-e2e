@@ -27,6 +27,15 @@ export interface ElementRect {
   left: number;
 }
 
+export interface ScrollOptions {
+  /** Absolute horizontal scroll position (px). */
+  x?: number;
+  /** Absolute vertical scroll position (px). */
+  y?: number;
+  /** CSS selector to scroll into view (takes priority over x/y). */
+  selector?: string;
+}
+
 export interface BrowserBackend {
   /** Capture screenshot as PNG bytes. */
   captureScreenshot(opts?: {
@@ -34,6 +43,7 @@ export interface BrowserBackend {
     reload?: boolean;
     delay?: number;
     maxDim?: number;
+    fullPage?: boolean;
   }): Promise<Buffer>;
 
   /** Execute JavaScript in the page context. */
@@ -47,6 +57,9 @@ export interface BrowserBackend {
 
   /** Get element bounding rect, or null if not found. */
   getElementRect(selector: string): Promise<ElementRect | null>;
+
+  /** Scroll the page. Returns updated PageInfo. */
+  scroll(opts?: ScrollOptions): Promise<PageInfo>;
 
   /** Clean up resources. */
   close(): Promise<void>;
