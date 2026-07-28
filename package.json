@@ -46,7 +46,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/neilji/spark-e2e.git"
+    "url": "git+https://github.com/neil-ji/spark-e2e.git"
   },
   "engines": {
     "node": ">=18"
