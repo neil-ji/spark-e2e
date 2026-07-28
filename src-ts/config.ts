@@ -299,4 +299,4 @@ export function getAesthetics(): string {
   return readAestheticsFile(c.aestheticsFile);
 }
 
-export { findConfigFile, interpolateEnvVars };
+export { findConfigFile, interpolateEnvVars, loadDotenv };

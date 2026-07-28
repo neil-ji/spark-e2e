@@ -68,7 +68,7 @@ interface JsonObject {
   [key: string]: unknown;
 }
 
-function balanceJson(s: string): [string, number] {
+export function balanceJson(s: string): [string, number] {
   const stack: string[] = [];
   let inString = false;
   let escape = false;
