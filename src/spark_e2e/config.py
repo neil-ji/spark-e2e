@@ -44,7 +44,7 @@ class VLMConfig:
     base_url: str = ""
     model: str = "gpt-4o"
     provider: str = "openai-compat"
-    thinking_budget: int = 0
+    thinking_budget: int = 4000
 
 
 @dataclass

@@ -33,7 +33,7 @@ const VLMConfigSchema = z.object({
   baseUrl: z.string().default(""),
   model: z.string().default("gpt-4o"),
   provider: z.string().default("openai-compat"),
-  thinkingBudget: z.number().int().min(0).default(0),
+  thinkingBudget: z.number().int().min(0).default(4000),
 });
 
 const SelectorsConfigSchema = z.object({
@@ -66,7 +66,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 const DEFAULT_CONFIG: Config = {
   browser: { backend: "browser-harness", url: "http://localhost:5173" },
   viewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
-  vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 0 },
+  vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 4000 },
   selectors: {
     card: '[class*="card"]',
     progressFill: '[class*="progress"][class*="fill"]',
