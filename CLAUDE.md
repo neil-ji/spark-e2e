@@ -107,6 +107,7 @@ The three skills in `skills/` are Claude Code skills per the [official spec](htt
 | npm | `npm install -g spark-e2e` | Global TypeScript CLI |
 | pip | `pip install spark-e2e` | Python CLI |
 | Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 3 Claude Code skills |
+| Spark Hub | `spark-e2e init --agent spark-hub` | E2E skills for spark-hub |
 
 The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skills` with `source: "./"` (relative path), pointing `skills: ["skills"]` to auto-discover all three skill directories.
 

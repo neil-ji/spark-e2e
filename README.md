@@ -27,6 +27,7 @@ spark-e2e assert "Two cards have equal height" --url http://localhost:5173
 | `spark-e2e init` | Set up skills + config for AI agents |
 | `spark-e2e init --all --scope user` | Install for all agents globally |
 | `spark-e2e init --agent codex` | Install for a specific agent |
+| `spark-e2e init --agent spark-hub` | Install for spark-hub (~/.spark/config/custom-skills/) |
 | `spark-e2e init --api-key <k> --base-url <u>` | Configure VLM credentials |
 | `spark-e2e navigate <url>` | Load a page in the browser |
 | `spark-e2e snapshot --url <url>` | Capture a screenshot |
@@ -59,6 +60,9 @@ npm install -g spark-e2e
 
 # pip (Python users)
 pip install spark-e2e
+
+# spark-hub (install skills to ~/.spark/config/custom-skills/)
+spark-e2e init --agent spark-hub
 ```
 
 ## Configuration

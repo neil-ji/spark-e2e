@@ -19,13 +19,22 @@ import json
 import sys
 from pathlib import Path
 
+AGENTS = [
+    {"name": "claude", "label": "Claude Code", "dir": ".claude/skills", "detect_dirs": [".claude"]},
+    {"name": "codex", "label": "OpenAI Codex", "dir": ".agents/skills", "detect_dirs": [".agents", ".codex"]},
+    {"name": "qoder", "label": "Qoder", "dir": ".qoder/skills", "detect_dirs": [".qoder"]},
+    {"name": "trae", "label": "Trae", "dir": ".trae/skills", "detect_dirs": [".trae", ".traecli"]},
+    {"name": "spark-hub", "label": "Spark Hub", "dir": ".spark/config/custom-skills", "detect_dirs": [".spark"], "home_dir_only": True},
+]
+
 
 def cmd_init(args: argparse.Namespace) -> None:
-    """Copy spark-e2e skills into the project's .claude/skills/ directory."""
+    """Copy spark-e2e skills into an AI coding agent's skills directory."""
     import shutil
 
-    target = Path(args.dir or ".claude/skills")
-    target.mkdir(parents=True, exist_ok=True)
+    home = Path.home()
+    cwd = Path.cwd()
+    is_user = getattr(args, "scope", "project") == "user"
 
     # Find skills source — check multiple locations
     skills_src = None
@@ -35,7 +44,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         # 2. Installed package data (wheel install)
         Path(__file__).resolve().parent / "_skills",
         # 3. CWD (user running from repo root)
-        Path.cwd() / "skills",
+        cwd / "skills",
     ]
     for candidate in candidates:
         if candidate.is_dir():
@@ -51,32 +60,75 @@ def cmd_init(args: argparse.Namespace) -> None:
         print("  /plugin install spark-e2e-skills@spark-e2e")
         sys.exit(1)
 
-    print(f"spark-e2e init — Installing skills from {skills_src}")
-    print(f"Target: {target.resolve()}")
-    print()
+    # Determine targets — same logic as the TypeScript CLI
+    targets: list[dict] = []
 
-    count = 0
-    for entry in sorted(skills_src.iterdir()):
-        if entry.is_dir() and (entry / "SKILL.md").exists():
-            dest = target / entry.name
+    if args.dir:
+        targets.append({"label": "custom", "dir": Path(args.dir)})
+    elif getattr(args, "all", False):
+        for a in AGENTS:
+            home_only = a.get("home_dir_only", False)
+            base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+            targets.append({"label": a["label"], "dir": base})
+    elif args.agent:
+        a = next((x for x in AGENTS if x["name"] == args.agent), None)
+        if a is None:
+            print(f"Unknown agent: {args.agent}. Supported: {', '.join(x['name'] for x in AGENTS)}")
+            sys.exit(1)
+        home_only = a.get("home_dir_only", False)
+        base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+        targets.append({"label": a["label"], "dir": base})
+    else:
+        # Auto-detect: check which agent dirs exist in the project
+        detected = [
+            a for a in AGENTS
+            if any((cwd / d).is_dir() for d in a.get("detect_dirs", []))
+        ]
+        if detected:
+            for a in detected:
+                home_only = a.get("home_dir_only", False)
+                base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+                targets.append({"label": a["label"], "dir": base})
+        else:
+            # Default: Claude Code
+            base = (home / ".claude/skills") if is_user else (cwd / ".claude/skills")
+            targets.append({"label": "Claude Code (default)", "dir": base})
+
+    # Collect skill names
+    skill_names = sorted(
+        e.name for e in skills_src.iterdir()
+        if e.is_dir() and (e / "SKILL.md").exists()
+    )
+
+    if not skill_names:
+        print("No skills found in source directory.")
+        sys.exit(1)
+
+    # Install
+    print(f"spark-e2e init")
+    print(f"Source: {skills_src}")
+    if is_user:
+        print("Scope: user (installing to home directory)")
+
+    for t in targets:
+        print(f"── {t['label']} ──")
+        print(f"   {t['dir']}/")
+        t["dir"].mkdir(parents=True, exist_ok=True)
+        for name in skill_names:
+            src = skills_src / name
+            dest = t["dir"] / name
             if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(str(entry), str(dest))
-            print(f"  ✓ {entry.name}")
-            count += 1
-
-    print()
-    print(f"Installed {count} skills to {target.resolve()}")
-    print()
-    if count > 0:
-        print("Skills are now available in Claude Code:")
-        for entry in sorted(skills_src.iterdir()):
-            if entry.is_dir() and (entry / "SKILL.md").exists():
-                print(f"  /{entry.name}")
+                shutil.rmtree(str(dest))
+            shutil.copytree(str(src), str(dest))
+            print(f"   ✓ {name}")
         print()
-        print("You can also install via the plugin marketplace:")
-        print("  /plugin marketplace add neilji/spark-e2e")
-        print("  /plugin install spark-e2e-skills@spark-e2e")
+
+    scope_label = "globally (all projects)" if is_user else f"in {cwd}"
+    print(f"Done. {len(skill_names)} skills installed {scope_label}.")
+    print()
+    print("Skills available as slash commands:")
+    for name in skill_names:
+        print(f"  /{name}")
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -305,8 +357,12 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # init
-    p_init = subparsers.add_parser("init", help="Copy skills to .claude/skills/")
-    p_init.add_argument("--dir", help="Target directory (default: .claude/skills)")
+    p_init = subparsers.add_parser("init", help="Set up spark-e2e skills for AI coding agents")
+    p_init.add_argument("--agent", help=f"Target a specific agent: {', '.join(a['name'] for a in AGENTS)}")
+    p_init.add_argument("--all", action="store_true", help="Install for all supported agents")
+    p_init.add_argument("--scope", choices=["project", "user"], default="project",
+                        help="Install scope: project (default) or user")
+    p_init.add_argument("--dir", help="Custom target directory (overrides agent detection)")
     p_init.set_defaults(func=cmd_init)
 
     # doctor

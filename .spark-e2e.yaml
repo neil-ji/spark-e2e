@@ -1,0 +1,19 @@
+# spark-e2e configuration
+# See: https://github.com/neilji/spark-e2e
+
+browser:
+  backend: browser-harness
+  url: http://localhost:5173
+
+viewport:
+  width: 1600
+  height: 1200
+  deviceScaleFactor: 1
+
+vlm:
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
+
+prompts:
+  strictness: standard

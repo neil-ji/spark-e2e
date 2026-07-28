@@ -33,6 +33,8 @@ interface Agent {
   userDir: string;
   /** Directories that indicate this agent is in use */
   detectDirs: string[];
+  /** If true, always resolve under $HOME regardless of --scope */
+  homeDirOnly?: boolean;
 }
 
 const AGENTS: Agent[] = [
@@ -63,6 +65,14 @@ const AGENTS: Agent[] = [
     projectDir: ".trae/skills",
     userDir: ".trae/skills",
     detectDirs: [".trae", ".traecli"],
+  },
+  {
+    name: "spark-hub",
+    label: "Spark Hub",
+    projectDir: ".spark/config/custom-skills",
+    userDir: ".spark/config/custom-skills",
+    detectDirs: [".spark"],
+    homeDirOnly: true,
   },
 ];
 import { spawnSync } from "node:child_process";
@@ -101,7 +111,7 @@ async function captureAndEncode(opts?: {
 program
   .command("init")
   .description("Set up spark-e2e skills for AI coding agents")
-  .option("--agent <name>", "Target a specific agent: claude, codex, qoder, trae")
+  .option("--agent <name>", `Target a specific agent: ${AGENTS.map(a => a.name).join(", ")}`)
   .option("--all", "Install for all supported agents")
   .option("--scope <scope>", "Install scope: project (default) or user", "project")
   .option("--dir <path>", "Custom target directory (overrides agent detection)")
@@ -129,7 +139,8 @@ program
       targets.push({ label: "custom", dir: resolve(opts.dir) });
     } else if (opts.all) {
       for (const a of AGENTS) {
-        const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+        const effectiveIsUser = isUser || a.homeDirOnly;
+        const base = effectiveIsUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
         targets.push({ label: a.label, dir: base });
       }
     } else if (opts.agent) {
@@ -138,7 +149,8 @@ program
         console.error(`Unknown agent: ${opts.agent}. Supported: ${AGENTS.map(x => x.name).join(", ")}`);
         process.exit(1);
       }
-      const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+      const effectiveIsUser = isUser || a.homeDirOnly;
+      const base = effectiveIsUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
       targets.push({ label: a.label, dir: base });
     } else {
       // Auto-detect: check which agent dirs exist in the project
@@ -147,7 +159,8 @@ program
       );
       if (detected.length > 0) {
         for (const a of detected) {
-          const base = isUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
+          const effectiveIsUser = isUser || a.homeDirOnly;
+          const base = effectiveIsUser ? resolve(home, a.userDir) : resolve(cwd, a.projectDir);
           targets.push({ label: a.label, dir: base });
         }
       } else {
