@@ -108,16 +108,9 @@ Assert returns `{"pass": true|false, "confidence": "high"|"medium"|"low", "obser
 
 ## Aesthetic Principles
 
-Edit `AESTHETICS.md` at the project root to define reusable UI review standards. These rules are **automatically injected** into every `spark-e2e review` prompt. Add principles like:
+`AESTHETICS.md` at the project root defines project-specific UI conventions (spacing, colors, typography, component specs). It is **auto-injected** into every `spark-e2e review` prompt.
 
-```markdown
-## Layout
-- Cards in the same row must be equal height
-- All section spacing follows 8px rhythm
-- Sidebar and content area must share the same background color
-```
-
-The file is cumulative — keep adding rules as you discover patterns. Commit to git to share with the team.
+Run `/style-init` to generate it from the actual codebase — it scans Tailwind config, CSS variables, and components to extract real values. Re-run when the design system changes.
 
 ## Common Gotchas
 

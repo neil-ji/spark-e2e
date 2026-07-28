@@ -163,9 +163,9 @@ css_variables:
 
 With config in place, `--url` becomes optional.
 
-### Aesthetic Rules
+### Style Conventions
 
-Edit `AESTHETICS.md` to define project-specific UI standards (layout symmetry, spacing consistency, color semantics). These rules are automatically appended to every `spark-e2e review` prompt. See `skills/ui-review/SKILL.md` for details.
+Run `/style-init` to scan the frontend codebase and generate `AESTHETICS.md` — a structured conventions file (spacing, colors, typography, component specs). This file is auto-injected into every `spark-e2e review` prompt. Re-run after design-system changes.
 
 ## Common Pitfalls
 

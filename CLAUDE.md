@@ -81,9 +81,11 @@ Both browser backends and VLM providers use the same registry pattern in both la
 
 **`.env` is loaded first** (before YAML), so `${ENV_VAR}` interpolation in YAML resolves against `.env` values.
 
-### Aesthetic Rules (`AESTHETICS.md`)
+### Style Conventions (`AESTHETICS.md`)
 
-Project-specific UI review standards (layout symmetry, spacing, color consistency, etc.) are defined in `AESTHETICS.md` at the project root. This file is **automatically injected** into every `spark-e2e review` VLM prompt. It's designed to be cumulative — add rules as you discover new patterns. Edit, commit, share with the team.
+`AESTHETICS.md` is a **generated** file that defines project-specific UI conventions (spacing, colors, typography, component specs). It is automatically injected into every `spark-e2e review` VLM prompt.
+
+Run `/style-init` to scan the frontend codebase and regenerate this file. Re-run whenever the design system changes. The conventions are concrete and quantifiable — real pixel values, hex colors, and font sizes extracted from the actual codebase.
 
 ### Skills as Slash Commands
 
