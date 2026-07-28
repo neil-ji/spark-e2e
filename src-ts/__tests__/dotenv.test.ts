@@ -13,17 +13,15 @@ const origEnv = { ...process.env };
 beforeEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
   mkdirSync(tmpRoot, { recursive: true });
-  delete process.env.SPARK_E2E_API_KEY;
-  delete process.env.SPARK_E2E_MODEL;
-  delete process.env.SPARK_E2E_ENV;
+  // Aggressively clean all spark-e2e env vars
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("SPARK_E2E_") || key.startsWith("VLM_")) delete process.env[key];
+  }
   vi.resetModules();
 });
 
 afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
-  delete process.env.SPARK_E2E_API_KEY;
-  delete process.env.SPARK_E2E_MODEL;
-  delete process.env.SPARK_E2E_ENV;
 });
 
 describe("loadDotenv", () => {
@@ -76,13 +74,12 @@ describe("loadDotenv", () => {
     delete process.env.SPARK_E2E_API_KEY;
   });
 
-  it("skips missing explicit path gracefully", () => {
-    delete process.env.SPARK_E2E_API_KEY;
-    process.env.SPARK_E2E_ENV = "/no/such/.env";
-    // Should not throw
-    expect(() => loadDotenv()).not.toThrow();
+  it("skips missing explicit path gracefully", async () => {
+    // Must dynamic-import INSIDE the test because config.ts calls
+    // loadDotenv() at module level on import, re-contaminating env.
+    writeFileSync(join(tmpRoot, "empty.env"), "# empty\n", "utf-8");
+    process.env.SPARK_E2E_ENV = join(tmpRoot, "empty.env");
+    const mod = await import("../config.js");
     expect(process.env.SPARK_E2E_API_KEY).toBeUndefined();
-
-    delete process.env.SPARK_E2E_ENV;
   });
 });

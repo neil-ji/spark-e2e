@@ -83,6 +83,13 @@ import { toDataUrl } from "./browser/browser-harness.js";
 import { registerProvider } from "./vlm/index.js";
 import { OpenAICompatProvider, extractJson } from "./vlm/openai-compat.js";
 registerBackend("browser-harness", BrowserHarnessBackend);
+// Playwright is optional — register if importable (matching Python behavior)
+try {
+  const { PlaywrightBackend } = await import("./browser/playwright.js");
+  registerBackend("playwright", PlaywrightBackend);
+} catch {
+  // Playwright not installed — browser-harness will be the only option
+}
 registerProvider("openai-compat", OpenAICompatProvider);
 
 import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
