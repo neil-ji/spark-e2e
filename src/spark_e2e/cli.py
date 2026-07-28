@@ -20,11 +20,11 @@ import sys
 from pathlib import Path
 
 AGENTS = [
-    {"name": "claude", "label": "Claude Code", "dir": ".claude/skills", "detect_dirs": [".claude"]},
-    {"name": "codex", "label": "OpenAI Codex", "dir": ".agents/skills", "detect_dirs": [".agents", ".codex"]},
-    {"name": "qoder", "label": "Qoder", "dir": ".qoder/skills", "detect_dirs": [".qoder"]},
-    {"name": "trae", "label": "Trae", "dir": ".trae/skills", "detect_dirs": [".trae", ".traecli"]},
-    {"name": "spark-hub", "label": "Spark Hub", "dir": ".spark/config/custom-skills", "detect_dirs": [".spark"], "home_dir_only": True},
+    {"name": "claude", "label": "Claude Code", "project_dir": ".claude/skills", "user_dir": ".claude/skills", "detect_dirs": [".claude"]},
+    {"name": "codex", "label": "OpenAI Codex", "project_dir": ".agents/skills", "user_dir": ".agents/skills", "detect_dirs": [".agents", ".codex"]},
+    {"name": "qoder", "label": "Qoder", "project_dir": ".qoder/skills", "user_dir": ".qoder/skills", "detect_dirs": [".qoder"]},
+    {"name": "trae", "label": "Trae", "project_dir": ".trae/skills", "user_dir": ".trae/skills", "detect_dirs": [".trae", ".traecli"]},
+    {"name": "spark-hub", "label": "Spark Hub", "project_dir": ".spark/skills", "user_dir": ".spark/config/custom-skills", "detect_dirs": [".spark"]},
 ]
 
 
@@ -67,16 +67,14 @@ def cmd_init(args: argparse.Namespace) -> None:
         targets.append({"label": "custom", "dir": Path(args.dir)})
     elif getattr(args, "all", False):
         for a in AGENTS:
-            home_only = a.get("home_dir_only", False)
-            base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+            base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
             targets.append({"label": a["label"], "dir": base})
     elif args.agent:
         a = next((x for x in AGENTS if x["name"] == args.agent), None)
         if a is None:
             print(f"Unknown agent: {args.agent}. Supported: {', '.join(x['name'] for x in AGENTS)}")
             sys.exit(1)
-        home_only = a.get("home_dir_only", False)
-        base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+        base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
         targets.append({"label": a["label"], "dir": base})
     else:
         # Auto-detect: check which agent dirs exist in the project
@@ -86,8 +84,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         ]
         if detected:
             for a in detected:
-                home_only = a.get("home_dir_only", False)
-                base = home / a["dir"] if (is_user or home_only) else cwd / a["dir"]
+                base = (home / a["user_dir"]) if is_user else (cwd / a["project_dir"])
                 targets.append({"label": a["label"], "dir": base})
         else:
             # Default: Claude Code

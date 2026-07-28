@@ -69,10 +69,9 @@ const AGENTS: Agent[] = [
   {
     name: "spark-hub",
     label: "Spark Hub",
-    projectDir: ".spark/config/custom-skills",
+    projectDir: ".spark/skills",
     userDir: ".spark/config/custom-skills",
     detectDirs: [".spark"],
-    homeDirOnly: true,
   },
 ];
 import { spawnSync } from "node:child_process";

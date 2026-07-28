@@ -21,3 +21,6 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+# Generated skill directories (created by spark-e2e init)
+.claude/skills/
+.spark/skills/
