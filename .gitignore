@@ -1,11 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# Build output
 dist/
-build/
-.venv/
-venv/
 
 # Node / npm
 node_modules/

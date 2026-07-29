@@ -6,10 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 spark-e2e is a VLM-powered visual E2E testing CLI. Each command is a complete, self-contained action — open browser → navigate → screenshot → VLM analysis → return JSON. No persistent server needed.
 
-Two language implementations share the same protocol:
-- **`src-ts/`** — TypeScript CLI (primary, npm channel)
-- **`src/spark_e2e/`** — Python CLI (pip channel)
-- **`skills/`** — Shared Claude Code skills (Markdown, both CLI channels use the same skills)
+- **`src-ts/`** — TypeScript CLI
+- **`skills/`** — Shared Claude Code skills (Markdown)
 
 ## Commands
 
@@ -17,17 +15,13 @@ Two language implementations share the same protocol:
 # Quick setup (interactive wizard)
 spark-e2e setup
 
-# Install (TypeScript — primary)
+# Install
 npm install && npm run build
 npm link                       # global link for development
 
-# Install (Python)
-pip install -e ".[dev]"
-playwright install chromium    # optional Playwright backend
-
 # Test
-pytest                        # Python tests
-npx tsc --noEmit              # TypeScript type-check
+npm test                       # vitest
+npx tsc --noEmit               # type-check
 ```
 
 ## Architecture
@@ -38,40 +32,27 @@ skills/                          ← Claude Code skills (Markdown)
 ├── dom-verify/SKILL.md          ← /dom-verify — DOM checks
 └── e2e-test/SKILL.md            ← /e2e-test — full test cycle
 
-src-ts/                          ← TypeScript CLI (primary)
-├── cli.ts                       ← Commander, 9 subcommands
+src-ts/                          ← TypeScript CLI
+├── cli.ts                       ← Commander, 13 subcommands
 ├── config.ts                    ← js-yaml + dotenv + zod, 5-layer priority
 ├── prompts.ts                   ← Anti-hallucination prompts, 3 strictness levels
+├── baselines.ts                 ← Visual regression baseline CRUD
+├── runner.ts                    ← YAML test scenario runner
 ├── browser/
 │   ├── index.ts                 ← Registry pattern (registerBackend, getBackend)
-│   ├── browser-harness.ts       ← CDP backend (spawns browser-harness CLI)
-│   └── playwright.ts            ← Playwright native (optional peer dep)
+│   └── playwright.ts            ← Playwright native
 └── vlm/
     ├── index.ts                 ← Registry pattern (registerProvider, getProvider)
-    └── openai-compat.ts          ← OpenAI SDK + extractJson()
-
-src/spark_e2e/                   ← Python CLI (pip channel)
-├── cli.py                       ← argparse, 6 subcommands
-├── config.py                    ← PyYAML + dataclasses, same 5-layer priority
-├── prompts.py                   ← Same anti-hallucination prompts
-├── browser/
-│   ├── __init__.py              ← Registry pattern
-│   ├── base.py                  ← BrowserBackend ABC
-│   ├── browser_harness.py       ← CDP via subprocess
-│   └── playwright_.py           ← Playwright sync API
-└── vlm/
-    ├── __init__.py              ← Registry pattern
-    ├── base.py                  ← VLMProvider ABC
-    └── openai_compat.py         ← OpenAI SDK + extract_json()
+    └── openai-compat.ts         ← OpenAI SDK + extractJson()
 ```
 
 ### Plugin Architecture
 
 **Browser**: Playwright is the only backend. It auto-resolves from project `node_modules`, global npm, or bare specifier (in that order). Run `spark-e2e setup` to install it automatically.
 
-**VLM providers**: TypeScript `VLMProvider` interface (1 method: `chat`), Python `VLMProvider` ABC (1 method). Built-in: `openai-compat` (OpenAI SDK, works with any `/v1/chat/completions` endpoint).
+**VLM providers**: `VLMProvider` interface (1 method: `chat`). Built-in: `openai-compat` (OpenAI SDK, works with any `/v1/chat/completions` endpoint). Supports single or multiple images per call.
 
-### Config System (both languages)
+### Config System
 
 5-layer priority (highest first):
 1. CLI arguments (`--url`, `--model`, etc.)
@@ -106,7 +87,6 @@ The three skills in `skills/` are Claude Code skills per the [official spec](htt
 |---|---|---|
 | npx | `npx spark-e2e` | Native TypeScript CLI (zero install) |
 | npm | `npm install -g spark-e2e` | Global TypeScript CLI |
-| pip | `pip install spark-e2e` | Python CLI |
 | Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 3 Claude Code skills |
 | Setup Wizard | `spark-e2e setup` | Interactive config + skill install |
 
@@ -115,8 +95,8 @@ The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skil
 ### Testing
 
 ```bash
-npm test                       # TypeScript (vitest, 103 tests)
-pytest tests/                  # Python (25 tests)
+npm test                       # vitest, 62 tests across 7 files
+npx tsc --noEmit               # type-check
 ```
 
 ### Release
@@ -125,10 +105,8 @@ Release is fully automated via GitHub Actions + OIDC (trusted publishing). No lo
 
 **How to release:**
 ```bash
-# 1. Bump version (sync all three files)
+# 1. Bump version
 npm version <version> --no-git-tag-version
-sed -i '' 's/version = "X.Y.Z"/version = "<new>"/' pyproject.toml
-sed -i '' 's/__version__ = "X.Y.Z"/__version__ = "<new>"/' src/spark_e2e/__init__.py
 
 # 2. Commit, tag, push — CI handles the rest
 git add -A && git commit -m "chore: bump version to <new>"
@@ -138,7 +116,6 @@ git tag v<new> && git push origin master v<new>
 **What CI does:**
 - `v*` tag triggers `.github/workflows/publish.yml`
 - Runs verify (build + quick smoke), then `npm publish --provenance`
-- PyPI publish is handled separately (if configured)
 
 **Gotchas:**
 - npm does NOT allow republishing the same version. If a publish fails mid-flight, bump to the next patch.
