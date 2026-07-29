@@ -900,6 +900,72 @@ program
     console.log("Done.");
   });
 
+// ── update ─────────────────────────────────────────────────
+
+program
+  .command("update")
+  .description("Migrate local config and data from older versions to latest")
+  .option("--dry-run", "Show what would be migrated without doing it")
+  .option("--yes", "Skip confirmation prompts")
+  .option("--list", "List all migrations and their status")
+  .action(async (opts) => {
+    const { MIGRATIONS, getPendingMigrations, runMigrations } = await import("./migrate.js");
+
+    // --list: show all migrations and their status for this project
+    if (opts.list) {
+      const pending = getPendingMigrations({ cwd: process.cwd() });
+      console.log("spark-e2e migrations:");
+      console.log("");
+      for (const m of MIGRATIONS) {
+        const isPending = pending.some((p: { version: string }) => p.version === m.version);
+        console.log(`  ${isPending ? "⟳" : "✓"}  v${m.version} — ${m.description}`);
+      }
+      console.log("");
+      if (pending.length === 0) {
+        console.log("All migrations applied — nothing to do.");
+      } else {
+        console.log(`${pending.length} migration(s) pending. Run "spark-e2e update" to apply.`);
+      }
+      return;
+    }
+
+    const pending = getPendingMigrations({ cwd: process.cwd() });
+    if (pending.length === 0) {
+      console.log("Nothing to migrate — all data is already on the latest paths.");
+      return;
+    }
+
+    // Show plan
+    console.log(`Found ${pending.length} pending migration(s):`);
+    console.log("");
+    for (const m of pending) {
+      console.log(`  v${m.version} — ${m.description}`);
+    }
+    console.log("");
+
+    const log = (msg: string) => console.log(msg);
+
+    if (opts.dryRun) {
+      await runMigrations({ cwd: process.cwd(), dryRun: true, log });
+      return;
+    }
+
+    // Confirm
+    if (!opts.yes) {
+      const { confirm } = await import("@clack/prompts");
+      const ok = await confirm({
+        message: "Proceed with migration?",
+        initialValue: true,
+      });
+      if (!ok || (typeof ok === "object" && (ok as { isCancel?: boolean }).isCancel)) {
+        console.log("Cancelled.");
+        return;
+      }
+    }
+
+    await runMigrations({ cwd: process.cwd(), log });
+  });
+
 // ── Parse ────────────────────────────────────────────────
 
 // Only auto-parse when executed directly, not when imported by tests

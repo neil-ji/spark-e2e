@@ -284,29 +284,11 @@ export async function setupCommand(opts: {
 
   p.intro("spark-e2e setup — VLM-powered Visual E2E Testing");
 
-  // ── Section 1: VLM Configuration ──────────────────────
-
-  let apiKey: string;
-  if (opts.apiKey) {
-    apiKey = opts.apiKey;
-  } else if (opts.yes) {
-    apiKey = "";
-  } else {
-    const key = await p.password({
-      message: "VLM API Key (input hidden)",
-      validate: (v) => {
-        if (!v || v.trim().length < 3) return "API key is required";
-      },
-    });
-    if (p.isCancel(key)) {
-      p.cancel("Setup cancelled.");
-      process.exit(0);
-    }
-    apiKey = key;
-  }
+  // ── Section 1: Provider Selection ─────────────────────
 
   let baseUrl: string;
   let model: string;
+  let isLocalProvider = false;
 
   if (opts.yes) {
     baseUrl = opts.baseUrl ?? PROVIDER_PRESETS.openai.baseUrl;
@@ -318,7 +300,7 @@ export async function setupCommand(opts: {
         { value: "openai", label: "OpenAI", hint: "gpt-4o" },
         { value: "anthropic", label: "Anthropic", hint: "claude-sonnet-5" },
         { value: "gemini", label: "Google Gemini", hint: "gemini-2.5-flash" },
-        { value: "ollama", label: "Ollama (local)", hint: "llava" },
+        { value: "ollama", label: "Ollama (local)", hint: "llava — no API key needed" },
         { value: "custom", label: "Custom endpoint", hint: "any OpenAI-compatible API" },
       ],
     });
@@ -328,7 +310,12 @@ export async function setupCommand(opts: {
       process.exit(0);
     }
 
-    if (providerKey === "custom") {
+    if (providerKey === "ollama") {
+      isLocalProvider = true;
+      baseUrl = PROVIDER_PRESETS.ollama.baseUrl;
+      model = PROVIDER_PRESETS.ollama.model;
+      p.log.info(`Ollama (local): ${model} @ ${baseUrl}`);
+    } else if (providerKey === "custom") {
       baseUrl = (await p.text({
         message: "VLM Base URL",
         placeholder: "https://api.openai.com/v1",
@@ -343,9 +330,29 @@ export async function setupCommand(opts: {
       const preset = PROVIDER_PRESETS[providerKey as string];
       baseUrl = preset.baseUrl;
       model = preset.model;
-      // Show what was auto-selected
       p.log.info(`${preset.label}: ${model} @ ${baseUrl}`);
     }
+  }
+
+  // ── Section 2: API Key ────────────────────────────────
+
+  let apiKey: string;
+  if (opts.apiKey) {
+    apiKey = opts.apiKey;
+  } else if (opts.yes || isLocalProvider) {
+    apiKey = "ollama"; // local providers don't need a real key
+  } else {
+    const key = await p.password({
+      message: "VLM API Key (input hidden)",
+      validate: (v) => {
+        if (!v || v.trim().length < 3) return "API key is required";
+      },
+    });
+    if (p.isCancel(key)) {
+      p.cancel("Setup cancelled.");
+      process.exit(0);
+    }
+    apiKey = key;
   }
 
   // ── Section 2: Browser Configuration ──────────────────
