@@ -68,7 +68,6 @@ export const ConfigSchema = z.object({
   prompts: PromptsConfigSchema.default({}),
   security: SecurityConfigSchema.default({}),
   cssVariables: z.array(z.string()).default([]),
-  aestheticsFile: z.string().default("AESTHETICS.md"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -97,7 +96,6 @@ const DEFAULT_CONFIG: Config = {
     ],
   },
   cssVariables: [],
-  aestheticsFile: "AESTHETICS.md",
 };
 
 // ── Cache ───────────────────────────────────────────────
@@ -151,10 +149,63 @@ function loadYamlConfig(path: string): Record<string, unknown> {
 // ── Build config ────────────────────────────────────────
 
 function readAestheticsFile(path: string): string {
-  // Resolve relative to cwd
   const resolved = resolve(path);
   if (!existsSync(resolved)) return "";
   return readFileSync(resolved, "utf-8").trim();
+}
+
+/** Extract YAML frontmatter from markdown. Returns { frontmatter, body }. */
+function parseFrontmatter(md: string): { frontmatter: Record<string, unknown>; body: string } {
+  const match = md.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!match) return { frontmatter: {}, body: md };
+  try {
+    return { frontmatter: (yaml.load(match[1]) as Record<string, unknown>) ?? {}, body: match[2].trim() };
+  } catch {
+    return { frontmatter: {}, body: md };
+  }
+}
+
+/**
+ * Auto-load AESTHETICS.md with priority merging.
+ *
+ * 1. ~/.spark/AESTHETICS.md — global rules (all projects)
+ * 2. ./AESTHETICS.md        — project rules (overrides)
+ *
+ * Project frontmatter controls merge behavior:
+ *   merge: append   (default) — project appended after global
+ *   merge: replace            — project replaces global entirely
+ *   merge: disable            — skip project, global only
+ */
+export function loadAesthetics(): { content: string; sources: string[] } {
+  const globalPath = resolve(homedir(), ".spark", "AESTHETICS.md");
+  const projectPath = resolve("AESTHETICS.md");
+
+  const global = readAestheticsFile(globalPath);
+  if (!global) {
+    const project = readAestheticsFile(projectPath);
+    return { content: project, sources: project ? [projectPath] : [] };
+  }
+
+  const project = readAestheticsFile(projectPath);
+  if (!project) {
+    return { content: global, sources: [globalPath] };
+  }
+
+  // Both exist — apply merge strategy from project frontmatter
+  const { frontmatter, body: projectBody } = parseFrontmatter(project);
+  const merge = (frontmatter.merge as string) ?? "append";
+
+  if (merge === "replace") {
+    return { content: projectBody, sources: [projectPath] };
+  }
+  if (merge === "disable") {
+    return { content: global, sources: [globalPath] };
+  }
+  // default: append
+  return {
+    content: global + "\n\n" + projectBody,
+    sources: [globalPath, projectPath],
+  };
 }
 
 function applyYamlToConfig(config: Config, data: Record<string, unknown>): void {
@@ -205,10 +256,6 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
     if (Array.isArray(sec.mask_selectors)) {
       config.security.maskSelectors = sec.mask_selectors.map(String);
     }
-  }
-
-  if (typeof data.aesthetics_file === "string") {
-    config.aestheticsFile = data.aesthetics_file as string;
   }
 }
 
@@ -324,8 +371,7 @@ export function getVlmModel(defaultModel = "gpt-4o"): string {
 }
 
 export function getAesthetics(): string {
-  const c = getConfig();
-  return readAestheticsFile(c.aestheticsFile);
+  return loadAesthetics().content;
 }
 
 export { findConfigFile, interpolateEnvVars, loadDotenv };

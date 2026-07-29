@@ -12,14 +12,20 @@ Two modes:
 
 Output is a **findings list or pass/fail result** — this skill does not fix code.
 
-## Prerequisites
+## Before starting
+
+Verify the environment is ready:
 
 ```bash
-# One-time
-npm install -g spark-e2e
-spark-e2e setup          # provider + API key + skills install
-spark-e2e doctor         # verify
+spark-e2e doctor
 ```
+
+Confirm the output shows:
+- `✓` for Node, Playwright, and API key
+- AESTHETICS.md sources listed (global + project) — or a hint if missing
+- Project `.env` check — used for `${ENV_VAR}` credentials in YAML steps
+
+If anything is missing, report it to the user. Do NOT run `spark-e2e setup` or `npm install`.
 
 ## Mode 1: Quick Check (single page)
 
@@ -40,7 +46,7 @@ spark-e2e inspect "check gauge labels are readable" --url "$ARGUMENTS"
 
 ## Mode 2: YAML Runner (multi-step flows)
 
-For login, checkout, multi-page workflows — Agent writes a YAML file, spark-e2e executes:
+For login, checkout, multi-page workflows — write a YAML file, then execute:
 
 ```yaml
 # tests/login.yaml
@@ -60,26 +66,20 @@ scenarios:
 spark-e2e run tests/login.yaml
 ```
 
-**Credentials**: Never hardcode in YAML. Put secrets in `.env` (gitignored) and reference with `${VAR}`. The runner interpolates at load time; values are masked in logs.
+**Credentials**: Never hardcode in YAML. Put secrets in `.env` (gitignored) and reference with `${VAR}`.
 
 **Available steps**: `navigate`, `click`, `type`, `hover`, `scroll`, `wait`, `snapshot`, `assert`, `test`
 
 ## DOM Verification
 
-Before acting on VLM findings, verify they're real (VLMs hallucinate):
+Before reporting VLM findings as issues, verify they're real:
 
 ```bash
-spark-e2e dom-verify --url "$ARGUMENTS"           # full page
-spark-e2e dom-verify --url "$ARGUMENTS" --save     # save @refs for lookups
+spark-e2e dom-verify --url "$ARGUMENTS"           # full page structure
+spark-e2e dom-verify --url "$ARGUMENTS" --save     # save @refs for later lookups
 ```
 
-Returns `{layout, classPrefixes, cssVars}` — page structure, component prefix, design-token values. Use selectors from the output to grep component CSS, never guess variable names.
-
-## Style Conventions
-
-`AESTHETICS.md` at project root defines UI conventions (spacing, colors, typography). Auto-injected into every `spark-e2e review` prompt.
-
-Run `/spark-e2e-init` to generate it from the codebase. Re-run after design-system changes.
+Returns `{layout, classPrefixes, cssVars}`. Use selectors from the output to grep component CSS — never guess variable names.
 
 ## Common Gotchas
 

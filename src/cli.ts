@@ -90,7 +90,7 @@ registerProvider("openai-compat", OpenAICompatProvider);
 
 const browser = new PlaywrightBrowser();
 
-import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
+import { getConfig, load, findConfigFile, getAesthetics, loadAesthetics } from "./config.js";
 // browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
 import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getLocatePrompt, getAestheticsPrompt } from "./prompts.js";
@@ -890,6 +890,25 @@ program
     } else {
       console.log(`  ⓘ  No project .env — create one for test credentials`);
       console.log(`     e.g. TEST_PASSWORD=... and use \${TEST_PASSWORD} in YAML steps`);
+    }
+
+    // AESTHETICS.md
+    console.log();
+    console.log("─ AESTHETICS.md ─");
+    const aesthetics = loadAesthetics();
+    if (aesthetics.sources.length === 0) {
+      console.log(`  ⓘ  No AESTHETICS.md found`);
+      console.log(`     Global: ~/.spark/AESTHETICS.md`);
+      console.log(`     Project: ./AESTHETICS.md`);
+      console.log(`     Run /spark-e2e-init to generate.`);
+    } else {
+      for (const src of aesthetics.sources) {
+        const label = src.startsWith(homedir()) ? `Global: ${src.replace(homedir(), "~")}` : `Project: ${src}`;
+        console.log(`  ✓ ${label}`);
+      }
+      if (aesthetics.sources.length === 2) {
+        console.log(`  → Merging: project appended after global`);
+      }
     }
 
     console.log();
