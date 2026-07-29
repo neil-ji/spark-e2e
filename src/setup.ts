@@ -360,9 +360,9 @@ export async function setupCommand(opts: {
   const defaultUrl = opts.yes
     ? "http://localhost:5173"
     : ((await p.text({
-        message: "Default URL to test",
-        placeholder: "http://localhost:5173",
-        defaultValue: "http://localhost:5173",
+        message: "Default URL to test (optional, use --url to override)",
+        placeholder: "Leave empty to skip, e.g. http://localhost:5173",
+        defaultValue: "",
       })) as string);
 
   // Auto-detect viewport from system screen size
@@ -535,7 +535,11 @@ export async function setupCommand(opts: {
   console.log(`  Next steps:`);
   console.log();
   console.log(`    spark-e2e doctor                Verify your setup`);
-  console.log(`    spark-e2e review --url ${defaultUrl}    Run first visual review`);
+  if (defaultUrl) {
+    console.log(`    spark-e2e review --url ${defaultUrl}    Run first visual review`);
+  } else {
+    console.log(`    spark-e2e review --url <your-url>    Run first visual review`);
+  }
   console.log();
   if (installedSkills.length > 0) {
     console.log(`  Slash commands:`);
