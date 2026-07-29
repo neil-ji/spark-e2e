@@ -39,6 +39,7 @@ type Step =
   | { test: string }
   | { assert: string }
   | { wait: number }
+  | { scroll: { x?: number; y?: number } }
   | { snapshot: string };
 
 interface StepResult {
@@ -85,6 +86,14 @@ async function runStep(
   if ("wait" in step) {
     await browser.waitForTimeout(step.wait * 1000);
     return { step: step as Record<string, unknown>, pass: true, type: "wait", detail: `${step.wait}s`, durationMs: Date.now() - started };
+  }
+
+  // ── scroll ──
+  if ("scroll" in step) {
+    const s = step.scroll as { x?: number; y?: number };
+    await browser.scroll({ deltaX: s.x, deltaY: s.y });
+    const detail = s.y != null ? `y=${s.y}` : `x=${s.x}`;
+    return { step: step as Record<string, unknown>, pass: true, type: "scroll", detail, durationMs: Date.now() - started };
   }
 
   // ── snapshot ──

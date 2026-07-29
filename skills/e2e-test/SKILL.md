@@ -4,11 +4,81 @@ argument-hint: "[url] — page URL, e.g. http://localhost:5173/dashboard"
 ---
 
 Full-cycle visual E2E testing using the `spark-e2e` CLI.
-Runs: Navigate → Snapshot → Review → DOM Verify → Assert → Report.
+Two modes:
+
+1. **Atomic CLI commands** — one browser session per command, for quick checks
+2. **YAML test runner** (`spark-e2e run`) — multi-step scripts in one browser session
+
+## How to execute Playwright scripts
+
+spark-e2e does NOT execute raw Playwright `.spec.ts` files. Instead, **write YAML test scenarios** using the runner's step types. The runner translates YAML steps into Playwright operations internally — same API, same browser.
+
+```
+Agent writes YAML  →  spark-e2e run file.yaml  →  Playwright executes
+```
 
 ## Arguments
 
 `$ARGUMENTS` is the target URL. Pass via `--url` on each command.
+
+## YAML Test Runner (for multi-step scripts)
+
+When a task needs a sequence of browser actions (login, form fill, multi-page flow), write a YAML test file and execute it:
+
+```yaml
+# tests/login.yaml — Agent writes this
+scenarios:
+  - name: login flow
+    steps:
+      - navigate: https://app.example.com/login
+      - wait: 1
+      - type: { text: "${TEST_EMAIL}", into: "email field" }
+      - type: { text: "${TEST_PASSWORD}", into: "password field" }
+      - click: "Sign In button"
+      - wait: 2
+      - assert: "Dashboard is visible"
+      - test: "User avatar and name are displayed in header"
+```
+
+Execute:
+```bash
+spark-e2e run tests/login.yaml
+```
+
+### Available step types
+
+| Step | YAML key | Description |
+|------|----------|-------------|
+| Navigate | `navigate: <url>` | Load a page. Relative URLs resolve against suite `config.url` |
+| Click | `click: "<target>"` | VLM-locate and click an element |
+| Type | `type: { text: "...", into: "..." }` | VLM-locate field and type text. Use `${ENV_VAR}` for credentials |
+| Hover | `hover: "<target>"` | VLM-locate and hover over an element |
+| Scroll | `scroll: { y: 500 }` | Scroll page by delta or to absolute `{ x, y }` position |
+| Wait | `wait: 2` | Wait N seconds (for animations, page loads) |
+| Snapshot | `snapshot: "step1"` | Save screenshot to `runs/<name>/` for debugging |
+| Assert | `assert: "<condition>"` | VLM assertion — pass/fail with reasoning |
+| Test | `test: "<expectations>"` | Multi-expectation VLM check in one step |
+
+### Suite-level config
+
+```yaml
+# tests/suite.yaml
+config:
+  url: https://app.example.com     # base URL for relative navigates
+
+scenarios:
+  - name: dashboard check
+    steps:
+      - navigate: /dashboard        # resolves to https://app.example.com/dashboard
+      - assert: "All KPI cards visible"
+```
+
+### Output
+
+Results go to `.spark/plugin/e2e/runs/<yaml-name>/`:
+- `report.json` — per-step pass/fail with timing
+- `step-N.png` — snapshots from `snapshot` steps
+- Logs print to stderr with `[spark-e2e]` prefix
 
 ## Prerequisites
 
