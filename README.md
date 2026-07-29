@@ -1,152 +1,184 @@
 # spark-e2e
 
-VLM-powered visual E2E testing for the web.  
-**One command per action.** No MCP server needed.
-
-## Quick Start
-
-```bash
-# Interactive setup — configure everything in one go
-npx spark-e2e setup
-
-# Verify
-spark-e2e doctor
-
-# Use
-spark-e2e review --focus comprehensive --url http://localhost:5173
-spark-e2e assert "Two cards have equal height" --url http://localhost:5173
-```
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `spark-e2e setup` | Interactive wizard — config + skill install |
-| `spark-e2e doctor` | Diagnose environment |
-| `spark-e2e navigate <url>` | Load a page in the browser |
-| `spark-e2e snapshot --url <url>` | Capture a screenshot |
-| `spark-e2e inspect "<prompt>" --url <url>` | Ask a VLM about the page |
-| `spark-e2e assert "<condition>" --url <url>` | Verify a visual condition (pass/fail) |
-| `spark-e2e compare "<expected>" --url <url>` | Compare page against expected state |
-| `spark-e2e review --focus <f> --url <url>` | Comprehensive UI audit (JSON findings) |
-| `spark-e2e dom-verify --url <url>` | Batch DOM structure + CSS token discovery |
-| `spark-e2e doctor` | Diagnose the environment |
-
-All VLM commands return structured JSON. Stdout is the result — pipeable and scriptable.
-
-## How It Works
-
-Each command:
-1. Opens the browser (via **browser-harness** CDP protocol, or **Playwright**)
-2. Navigates to the URL
-3. Captures a screenshot
-4. Sends it to a **Vision Language Model** (GPT-4o, Qwen-VL, etc.)
-5. Returns the VLM's analysis as JSON
-
-No persistent server. No long-running process. Each command is a complete, self-contained action.
+VLM-powered visual E2E testing CLI. Each command is self-contained — open browser → screenshot → VLM analysis → JSON output. No persistent server needed.
 
 ## Install
 
 ```bash
-# npm (Node.js users — zero install via npx, or global)
-npx spark-e2e
+# Global install (recommended)
 npm install -g spark-e2e
 
-# pip (Python users)
-pip install spark-e2e
+# Or on-demand via npx (slower, may hit cache issues)
+npx spark-e2e <command>
+```
 
-# spark-hub (install skills to ~/.spark/config/custom-skills/)
-spark-e2e init --agent spark-hub
+**Always prefer global install.** Local `node_modules` installs cause version conflicts and require npm script setup. The setup wizard warns you if it detects npx usage.
+
+## Quick Start
+
+```bash
+# Interactive setup — pick provider, configure VLM, install skills
+spark-e2e setup
+
+# Verify your setup
+spark-e2e doctor
+
+# Run your first review
+spark-e2e review --url https://example.com
+```
+
+## Commands
+
+### Core
+
+| Command | Description |
+|---|---|
+| `spark-e2e setup` | Interactive wizard — provider, API key, auto-detection |
+| `spark-e2e doctor` | Diagnose environment (Node, Playwright, API key, config) |
+| `spark-e2e update` | Migrate local data from older versions (`--dry-run` to preview) |
+
+### Visual Testing
+
+| Command | Description |
+|---|---|
+| `spark-e2e review --url <url>` | Comprehensive UI audit — returns findings as JSON |
+| `spark-e2e assert "<condition>" --url <url>` | Verify a visual condition (pass/fail) |
+| `spark-e2e test "<expectations>" --url <url>` | Verify multiple expectations in one call |
+| `spark-e2e inspect "<prompt>" --url <url>` | Free-form VLM analysis of the page |
+| `spark-e2e compare "<expected>" --url <url>` | Compare page against expected state |
+
+### Browser Interaction
+
+| Command | Description |
+|---|---|
+| `spark-e2e navigate <url>` | Load a page (handles lazy-loaded content) |
+| `spark-e2e snapshot --url <url>` | Capture a screenshot to file |
+| `spark-e2e click "<target>" --url <url>` | Click an element via VLM targeting |
+| `spark-e2e type "<text>" --url <url>` | Type text into a field via VLM targeting |
+| `spark-e2e hover "<target>" --url <url>` | Hover over an element via VLM targeting |
+| `spark-e2e scroll [--x px] [--y px] [--selector css]` | Scroll the page |
+| `spark-e2e dom-verify --url <url>` | DOM structure + CSS token discovery (`--save` for @ref lookups) |
+
+### Regression
+
+| Command | Description |
+|---|---|
+| `spark-e2e baseline save <name>` | Save current page as visual baseline |
+| `spark-e2e baseline compare <name>` | AI-powered visual diff against baseline |
+| `spark-e2e baseline list` | List saved baselines |
+| `spark-e2e baseline delete <name>` | Delete a baseline |
+
+### YAML Runner
+
+```bash
+spark-e2e run tests/*.yaml    # Run YAML test scenarios
+```
+
+Example `.yaml`:
+
+```yaml
+scenarios:
+  - name: login flow
+    steps:
+      - navigate: https://app.example.com/login
+      - type: { text: "${TEST_PASSWORD}", into: "password field" }
+      - click: "Sign In button"
+      - assert: "Dashboard is visible"
 ```
 
 ## Configuration
 
-Create `.spark-e2e.yaml` in your project root (optional — defaults work without it):
+### Setup Wizard (recommended)
+
+```bash
+spark-e2e setup
+```
+
+Picks a provider (OpenAI / Anthropic / Gemini / Ollama / Custom), auto-fills URL and model, and writes config for you.
+
+### Manual — `.spark-e2e.yaml`
 
 ```yaml
-browser:
-  backend: browser-harness   # or playwright
-  url: http://localhost:5173
+vlm:
+  provider: openai-compat
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
 
 viewport:
   width: 1600
   height: 1200
 
-vlm:
-  api_key: "${SPARK_E2E_API_KEY}"
-  base_url: "${SPARK_E2E_BASE_URL}"
-  model: gpt-4o
-
 selectors:
   card: '[class*="card"]'
   active_nav: '[aria-current="page"]'
 
-css_variables:
-  - "--color-accent"
-  - "--color-text"
-  - "--color-positive"
-  - "--color-negative"
-
 prompts:
   strictness: standard       # standard | strict | relaxed
+
+# Sensitive field masking (defaults shown)
+security:
+  mask_selectors:
+    - 'input[type="password"]'
+    - 'input[name*="secret" i]'
+    - '.api-key-display'
 ```
 
-Or use environment variables:
+### Environment Variables
 
 ```bash
-export SPARK_E2E_API_KEY="..."
-export SPARK_E2E_BASE_URL="https://..."
+export SPARK_E2E_API_KEY="sk-..."
+export SPARK_E2E_BASE_URL="https://api.openai.com/v1"
 export SPARK_E2E_MODEL="gpt-4o"
 ```
+
+Config priority: CLI args > env vars > YAML > defaults.
+
+## Security
+
+- **Credential safety**: VLM prompts include anti-leak rules — the model is instructed never to transcribe passwords, API keys, or tokens it sees on screen
+- **Field masking**: Password fields and configurable selectors are masked before screenshots are captured
+- **Env var interpolation**: Use `${VAR}` in YAML test steps instead of hardcoded passwords
+- **File permissions**: `~/.spark/plugin/e2e/.env` is `chmod 600` (owner-only)
+- **No logging**: API keys are never written to logs or JSON output
+
+See `spark-e2e update` to migrate local data from older versions.
 
 ## Architecture
 
 ```
-skills/                    ← Claude Code skills (Markdown)
-├── ui-review/SKILL.md     ← /ui-review — review loop
-├── dom-verify/SKILL.md    ← /dom-verify — DOM checks
-└── e2e-test/SKILL.md      ← /e2e-test — full test cycle
+skills/                    ← Claude Code slash commands
+├── ui-review/SKILL.md     ← /ui-review
+├── dom-verify/SKILL.md    ← /dom-verify
+├── e2e-test/SKILL.md      ← /e2e-test
+└── style-init/SKILL.md    ← /style-init
 
-src/                    ← TypeScript CLI (primary)
-├── cli.ts                 ← All 9 commands
-├── config.ts              ← YAML + env config
-├── prompts.ts             ← Anti-hallucination prompts
-├── browser/               ← browser-harness + Playwright
-└── vlm/                   ← OpenAI-compatible provider
-
-src/spark_e2e/             ← Python CLI (pip channel)
-├── cli.py                 ← Same commands
-├── config.py
-├── prompts.py
+src/                       ← TypeScript CLI
+├── cli.ts                 ← Commander, 15 subcommands
+├── config.ts              ← 5-layer config (cli → env → yaml → legacy → default)
+├── prompts.ts             ← Anti-hallucination + credential safety prompts
+├── migrate.ts             ← Versioned migration engine (spark-e2e update)
+├── setup.ts               ← Interactive setup wizard
+├── runner.ts              ← YAML test scenario runner
+├── baselines.ts           ← Visual regression baseline CRUD
 ├── browser/
+│   └── playwright.ts      ← Playwright native (only backend)
 └── vlm/
+    └── openai-compat.ts   ← OpenAI SDK (any /v1/chat/completions endpoint)
 ```
 
-## Extending
+## Skills as Slash Commands
 
-### Add a browser backend
+spark-e2e ships 4 Claude Code skills:
 
-```typescript
-// TypeScript
-import { BrowserBackend, registerBackend } from "spark-e2e/browser";
-class MyBackend implements BrowserBackend { /* ... */ }
-registerBackend("my-backend", MyBackend);
-```
+| Skill | Trigger |
+|---|---|
+| `/ui-review` | Visual UI review → findings → DOM verify → fix |
+| `/dom-verify` | Batch DOM structure + CSS token verification |
+| `/e2e-test` | Full-cycle visual E2E testing |
+| `/style-init` | Scan frontend codebase → generate style conventions |
 
-```python
-# Python
-from spark_e2e.browser import BrowserBackend, register_backend
-class MyBackend(BrowserBackend): ...
-register_backend("my-backend", MyBackend)
-```
-
-### Add a VLM provider
-
-```typescript
-import { VLMProvider, registerProvider } from "spark-e2e/vlm";
-class MyProvider implements VLMProvider { /* chat(prompt, imageUrl): Promise<string> */ }
-registerProvider("my-provider", MyProvider);
-```
+Install via `spark-e2e setup` or the Plugin Marketplace.
 
 ## License
 
