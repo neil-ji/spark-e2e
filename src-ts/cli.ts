@@ -12,6 +12,7 @@
  *   assert       Run a visual assertion (pass/fail)
  *   compare      Compare page against expected state
  *   test         Natural language E2E test (navigate → review → assert in one call)
+ *   baseline     Visual regression baselines (save, compare, list, delete)
  *   review       Comprehensive visual UI audit
  *   dom-verify   Batch DOM structure + CSS discovery
  *   doctor       Diagnose the environment
@@ -88,7 +89,8 @@ const browser = new PlaywrightBrowser();
 import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
 // browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
-import { getReviewPrompt, getAssertPrompt, getTestPrompt, getAestheticsPrompt } from "./prompts.js";
+import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getAestheticsPrompt } from "./prompts.js";
+import { saveBaseline, loadBaseline, listBaselines, deleteBaseline, readBaselineScreenshot } from "./baselines.js";
 
 const program = new Command();
 
@@ -354,6 +356,126 @@ program
       console.log(raw);
     }
     await browser.close();
+  });
+
+// ── baseline ──────────────────────────────────────────────
+
+const baseline = program
+  .command("baseline")
+  .description("Visual regression baselines — save, compare, list, delete");
+
+baseline
+  .command("save")
+  .description("Save current page screenshot as a named baseline")
+  .requiredOption("--name <name>", "Baseline name (e.g. 'dashboard-v1')")
+  .option("--url <url>", "Target URL")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .action(async (opts) => {
+    const cfg = getConfig();
+    const url = opts.url ?? cfg.browser.url;
+
+    if (url) await browser.navigate(url);
+    const { buf } = await captureAndEncode({
+      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
+    });
+
+    const dir = saveBaseline(opts.name, buf, {
+      url,
+      viewport: { width: opts.width ?? cfg.viewport.width, height: opts.height ?? cfg.viewport.height, deviceScaleFactor: 1 },
+      model: cfg.vlm.model,
+    });
+
+    console.log(JSON.stringify({ saved: opts.name, path: dir }, null, 2));
+    await browser.close();
+  });
+
+baseline
+  .command("compare")
+  .description("Compare current page against a saved baseline (AI-powered visual diff)")
+  .requiredOption("--name <name>", "Baseline name to compare against")
+  .option("--url <url>", "Target URL")
+  .option("--model <model>", "VLM model override")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .action(async (opts) => {
+    const cfg = getConfig();
+    const provider = getProvider(cfg.vlm.provider);
+
+    const baselineEntry = loadBaseline(opts.name);
+    if (!baselineEntry) {
+      console.error(`Baseline "${opts.name}" not found. Use \`spark-e2e baseline list\` to see available baselines.`);
+      process.exit(1);
+    }
+
+    const url = opts.url ?? baselineEntry.meta.url;
+    if (url) await browser.navigate(url);
+
+    // Use same viewport as baseline or override from CLI
+    const vpWidth = opts.width ?? baselineEntry.meta.viewport.width;
+    const vpHeight = opts.height ?? baselineEntry.meta.viewport.height;
+
+    const { buf: currentPngBuf } = await captureAndEncode({
+      viewport: { width: vpWidth, height: vpHeight, deviceScaleFactor: 1 },
+    });
+
+    const baselinePng = readBaselineScreenshot(opts.name);
+    if (!baselinePng) {
+      console.error(`Baseline "${opts.name}" screenshot missing. Re-save it.`);
+      process.exit(1);
+    }
+
+    const baselineDataUrl = "data:image/png;base64," + baselinePng.toString("base64");
+    const currentDataUrl = "data:image/png;base64," + currentPngBuf.toString("base64");
+
+    console.error(`Comparing against baseline "${opts.name}" (${baselineEntry.meta.timestamp}) ...`);
+
+    const prompt = getBaselineComparePrompt(opts.name);
+    const raw = await provider.chat(prompt, [baselineDataUrl, currentDataUrl], opts.model, cfg.vlm.thinkingBudget);
+
+    try {
+      const result = extractJson(raw);
+      console.log(JSON.stringify(result, null, 2));
+    } catch {
+      console.log(raw);
+    }
+    await browser.close();
+  });
+
+baseline
+  .command("list")
+  .description("List all saved baselines")
+  .action(() => {
+    const baselines = listBaselines();
+    if (baselines.length === 0) {
+      console.log("No baselines saved yet. Use `spark-e2e baseline save --name <name>` to create one.");
+      return;
+    }
+    console.log(JSON.stringify(
+      baselines.map((b) => ({
+        name: b.name,
+        url: b.url,
+        viewport: `${b.viewport.width}x${b.viewport.height}`,
+        timestamp: b.timestamp,
+        model: b.model,
+      })),
+      null,
+      2,
+    ));
+  });
+
+baseline
+  .command("delete")
+  .description("Delete a saved baseline")
+  .requiredOption("--name <name>", "Baseline name to delete")
+  .action((opts) => {
+    const ok = deleteBaseline(opts.name);
+    if (ok) {
+      console.log(`Deleted baseline "${opts.name}".`);
+    } else {
+      console.error(`Baseline "${opts.name}" not found.`);
+      process.exit(1);
+    }
   });
 
 // ── review ───────────────────────────────────────────────

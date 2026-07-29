@@ -29,14 +29,17 @@ class OpenAICompatProvider(VLMProvider):
     def chat(
         self,
         prompt: str,
-        image_data_url: str,
+        image_data_url: str | list[str],
         model: str | None = None,
         thinking_budget: int = 0,
     ) -> str:
-        """Send a text + image prompt to the VLM.
+        """Send a text + image(s) prompt to the VLM.
 
         Uses the OpenAI Python SDK.  API key and base URL are read from
         the instance config, falling back to environment variables.
+
+        Args:
+            image_data_url: Single data URL or list for multi-image comparison.
         """
         from openai import OpenAI  # type: ignore[import-untyped]
 
@@ -54,10 +57,12 @@ class OpenAICompatProvider(VLMProvider):
             from spark_e2e.config import get_vlm_model
             resolved_model = get_vlm_model()
 
+        images = [image_data_url] if isinstance(image_data_url, str) else image_data_url
         thinking = thinking_budget > 0
         _log(
             f"VLM model={resolved_model} base_url={base_url}"
             + (f" thinking_budget={thinking_budget}" if thinking else "")
+            + (f" images={len(images)}" if len(images) > 1 else "")
         )
 
         client = OpenAI(api_key=api_key, base_url=base_url)
@@ -69,7 +74,10 @@ class OpenAICompatProvider(VLMProvider):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ]
+                    + [
+                        {"type": "image_url", "image_url": {"url": url}}
+                        for url in images
                     ],
                 }
             ],

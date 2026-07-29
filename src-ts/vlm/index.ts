@@ -2,11 +2,12 @@
  * VLM provider registry and base interface.
  */
 export interface VLMProvider {
-  /** Send a prompt + image to the VLM, return its text response.
+  /** Send a prompt + image(s) to the VLM, return its text response.
+   * @param imageDataUrl — single data URL or array for multi-image comparisons.
    * @param thinkingBudget — max tokens for extended thinking (0 = off, default).
    *   Only works with models that support extended thinking (Claude 5, o1/o3, etc.).
    */
-  chat(prompt: string, imageDataUrl: string, model?: string, thinkingBudget?: number): Promise<string>;
+  chat(prompt: string, imageDataUrl: string | string[], model?: string, thinkingBudget?: number): Promise<string>;
 }
 
 // ── Registry ────────────────────────────────────────────

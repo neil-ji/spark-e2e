@@ -12,7 +12,7 @@ function log(msg: string): void {
 export class OpenAICompatProvider implements VLMProvider {
   async chat(
     prompt: string,
-    imageDataUrl: string,
+    imageDataUrl: string | string[],
     model?: string,
     thinkingBudget?: number,
   ): Promise<string> {
@@ -26,9 +26,11 @@ export class OpenAICompatProvider implements VLMProvider {
     }
 
     const thinking = (thinkingBudget ?? 0) > 0;
+    const images = Array.isArray(imageDataUrl) ? imageDataUrl : [imageDataUrl];
     log(
       `VLM model=${resolvedModel} base_url=${baseUrl || "(default)"}` +
-        (thinking ? ` thinking_budget=${thinkingBudget}` : ""),
+        (thinking ? ` thinking_budget=${thinkingBudget}` : "") +
+        (images.length > 1 ? ` images=${images.length}` : ""),
     );
 
     const client = new OpenAI({ apiKey, baseURL: baseUrl || undefined });
@@ -41,7 +43,10 @@ export class OpenAICompatProvider implements VLMProvider {
             role: "user" as const,
             content: [
               { type: "text" as const, text: prompt },
-              { type: "image_url" as const, image_url: { url: imageDataUrl } },
+              ...images.map((url) => ({
+                type: "image_url" as const,
+                image_url: { url },
+              })),
             ],
           },
         ],

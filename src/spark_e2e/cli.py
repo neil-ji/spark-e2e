@@ -8,6 +8,7 @@ Commands:
     assert     Run a visual assertion (pass/fail)
     compare    Compare page against expected state
     test       Natural language E2E test (navigate → review → assert in one call)
+    baseline   Visual regression baselines (save, compare, list, delete)
     review     Comprehensive visual UI audit
     dom-verify Batch DOM structure + CSS discovery
     doctor     Diagnose the environment
@@ -277,6 +278,128 @@ def cmd_test(args: argparse.Namespace) -> None:
     backend.close()
 
 
+def cmd_baseline_save(args: argparse.Namespace) -> None:
+    """Save current page as a named baseline."""
+    import json as _json
+
+    from spark_e2e.config import load
+    from spark_e2e.browser import get_backend
+    from spark_e2e.baselines import save_baseline
+
+    cfg = load()
+    backend = get_backend(cfg.browser.backend)
+    url = args.url or cfg.browser.url
+    print(f"Navigating to {url} ...")
+    backend.navigate(url)
+
+    viewport = cfg.viewport
+    vp = {
+        "width": args.width if args.width else viewport.width,
+        "height": args.height if args.height else viewport.height,
+        "deviceScaleFactor": 1,
+    }
+
+    png = backend.capture_screenshot(viewport=vp, reload=True, delay=0.3)
+    d = save_baseline(args.name, png, url, vp, model=cfg.vlm.model)
+    print(_json.dumps({"saved": args.name, "path": d}, indent=2))
+    backend.close()
+
+
+def cmd_baseline_compare(args: argparse.Namespace) -> None:
+    """Compare current page against a saved baseline."""
+    import base64
+    import json as _json
+
+    from spark_e2e.config import load
+    from spark_e2e.browser import get_backend
+    from spark_e2e.vlm import get_provider
+    from spark_e2e.baselines import load_baseline, read_baseline_screenshot
+
+    cfg = load()
+    entry = load_baseline(args.name)
+    if entry is None:
+        print(f'Baseline "{args.name}" not found. Use `spark-e2e baseline list` to see available baselines.')
+        raise SystemExit(1)
+
+    meta, _ = entry
+    backend = get_backend(cfg.browser.backend)
+    provider = get_provider(cfg.vlm.provider)
+
+    url = args.url or meta.url
+    print(f"Navigating to {url} ...")
+    backend.navigate(url)
+
+    vp = {
+        "width": args.width if args.width else meta.viewport["width"],
+        "height": args.height if args.height else meta.viewport["height"],
+        "deviceScaleFactor": 1,
+    }
+
+    current_png = backend.capture_screenshot(viewport=vp, reload=True, delay=0.3)
+
+    baseline_png = read_baseline_screenshot(args.name)
+    if baseline_png is None:
+        print(f'Baseline "{args.name}" screenshot missing. Re-save it.')
+        raise SystemExit(1)
+
+    baseline_data_url = "data:image/png;base64," + base64.b64encode(baseline_png).decode()
+    current_data_url = "data:image/png;base64," + base64.b64encode(current_png).decode()
+
+    print(f'Comparing against baseline "{args.name}" ({meta.timestamp}) ...')
+
+    from spark_e2e import prompts as prompts_mod
+    prompt = prompts_mod.get_baseline_compare_prompt(args.name)
+
+    print("Asking VLM ...")
+    raw = provider.chat(prompt, [baseline_data_url, current_data_url], args.model, cfg.vlm.thinking_budget)
+    try:
+        from spark_e2e.vlm.openai_compat import extract_json
+        result = extract_json(raw)
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    except Exception:
+        print(raw)
+
+    backend.close()
+
+
+def cmd_baseline_list(args: argparse.Namespace) -> None:
+    """List saved baselines."""
+    import json as _json
+
+    from spark_e2e.baselines import list_baselines
+
+    baselines = list_baselines()
+    if not baselines:
+        print("No baselines saved yet. Use `spark-e2e baseline save --name <name>` to create one.")
+        return
+
+    print(_json.dumps(
+        [
+            {
+                "name": b.name,
+                "url": b.url,
+                "viewport": f"{b.viewport['width']}x{b.viewport['height']}",
+                "timestamp": b.timestamp,
+                "model": b.model,
+            }
+            for b in baselines
+        ],
+        indent=2,
+    ))
+
+
+def cmd_baseline_delete(args: argparse.Namespace) -> None:
+    """Delete a saved baseline."""
+    from spark_e2e.baselines import delete_baseline
+
+    ok = delete_baseline(args.name)
+    if ok:
+        print(f'Deleted baseline "{args.name}".')
+    else:
+        print(f'Baseline "{args.name}" not found.')
+        raise SystemExit(1)
+
+
 # ── CLI definition ──────────────────────────────────────────────────
 
 
@@ -344,6 +467,32 @@ def main() -> None:
     p_test.add_argument("--reload", action="store_true", default=True, help="Reload before capture")
     p_test.add_argument("--delay", type=float, default=0.3, help="Delay after reload")
     p_test.set_defaults(func=cmd_test)
+
+    # baseline
+    p_baseline = subparsers.add_parser("baseline", help="Visual regression baselines")
+    baseline_subs = p_baseline.add_subparsers(dest="baseline_cmd")
+
+    p_bl_save = baseline_subs.add_parser("save", help="Save current page as a named baseline")
+    p_bl_save.add_argument("--name", required=True, help="Baseline name (e.g. 'dashboard-v1')")
+    p_bl_save.add_argument("--url", help="Target URL")
+    p_bl_save.add_argument("--width", type=int, help="Viewport width")
+    p_bl_save.add_argument("--height", type=int, help="Viewport height")
+    p_bl_save.set_defaults(func=cmd_baseline_save)
+
+    p_bl_compare = baseline_subs.add_parser("compare", help="Compare current page against a baseline")
+    p_bl_compare.add_argument("--name", required=True, help="Baseline name to compare against")
+    p_bl_compare.add_argument("--url", help="Target URL")
+    p_bl_compare.add_argument("--model", help="VLM model override")
+    p_bl_compare.add_argument("--width", type=int, help="Viewport width")
+    p_bl_compare.add_argument("--height", type=int, help="Viewport height")
+    p_bl_compare.set_defaults(func=cmd_baseline_compare)
+
+    p_bl_list = baseline_subs.add_parser("list", help="List all saved baselines")
+    p_bl_list.set_defaults(func=cmd_baseline_list)
+
+    p_bl_delete = baseline_subs.add_parser("delete", help="Delete a saved baseline")
+    p_bl_delete.add_argument("--name", required=True, help="Baseline name to delete")
+    p_bl_delete.set_defaults(func=cmd_baseline_delete)
 
     args = parser.parse_args()
     if not args.command:
