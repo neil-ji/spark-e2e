@@ -12,6 +12,79 @@ Two modes:
 
 Output is a **findings list or pass/fail result** — this skill does not fix code.
 
+## Output formats
+
+### review (open-ended)
+
+```json
+{
+  "findings": [
+    {
+      "severity": "critical | major | minor",
+      "category": "layout | typography | color | spacing | alignment | interactive | chart",
+      "description": "Sidebar highlight color is inconsistent with current page",
+      "location": "Top nav, third item from left",
+      "evidence": "actual: #3B82F6, expected: #1D4ED8 (from active_nav selector)",
+      "confidence": "high | medium | low"
+    }
+  ],
+  "summary": "3 issues found: 1 layout, 1 spacing, 1 color",
+  "no_issues_found": false
+}
+```
+
+### assert (single condition)
+
+```json
+{
+  "pass": true,
+  "confidence": "high",
+  "observation": "Sidebar 'Dashboard' item highlighted, all others default",
+  "reasoning": "Checked aria-current on nav items — only Dashboard has aria-current='page'"
+}
+```
+
+### test (multi-expectation)
+
+```json
+{
+  "pass": false,
+  "confidence": "medium",
+  "checks": [
+    {
+      "expectation": "two cards have equal height",
+      "pass": false,
+      "confidence": "high",
+      "observation": "Left card 320px, right card 380px",
+      "reasoning": "Measured bounding rects — right card taller due to extra description text"
+    }
+  ],
+  "summary": "1/3 checks failed: card height mismatch"
+}
+```
+
+### YAML runner report
+
+```json
+[
+  {
+    "name": "login flow",
+    "pass": true,
+    "steps": [
+      { "type": "navigate", "pass": true, "detail": "/login", "durationMs": 1200 },
+      { "type": "type", "pass": true, "detail": "[masked] into (420, 310)", "durationMs": 800 },
+      { "type": "click", "pass": true, "detail": "(500, 400)", "durationMs": 600 },
+      { "type": "assert", "pass": true, "detail": "Dashboard is visible", "durationMs": 2100 }
+    ],
+    "durationMs": 4700
+  }
+]
+```
+
+### inspect (free-form)
+
+VLM returns unstructured text answering the prompt. No fixed schema — parse key claims from the response.
+
 ## Before starting
 
 Verify the environment is ready:
