@@ -354,22 +354,55 @@ program
     await browser.close();
   });
 
+// ── @ref resolver (shared by click/type/hover) ────────────
+
+function resolveDomRef(ref: string): { x: number; y: number } | null {
+  const domStatePath = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+  if (!existsSync(domStatePath)) {
+    console.error(`No dom-state.json found. Run \`spark-e2e dom-verify --save\` first.`);
+    return null;
+  }
+  try {
+    const state = JSON.parse(readFileSync(domStatePath, "utf-8"));
+    const el = state.layout?.find((e: { ref: string }) => e.ref === ref);
+    if (!el) {
+      console.error(`Ref "${ref}" not found in dom-state.json (${state.layout?.length || 0} elements).`);
+      return null;
+    }
+    console.error(`Resolved ${ref} → (${el.center.x}, ${el.center.y}) [${el.tag}${el.text ? ' "' + el.text.slice(0,30) + '"' : ''}]`);
+    return { x: el.center.x, y: el.center.y };
+  } catch (err) {
+    console.error(`Failed to parse dom-state.json: ${(err as Error).message}`);
+    return null;
+  }
+}
+
 // ── click ─────────────────────────────────────────────────
 
 program
   .command("click")
-  .description("Click an element by visual description (VLM locates → Playwright clicks)")
-  .argument("<target>", "Visual description of the element (e.g. 'the Submit button')")
+  .description("Click an element by visual description or @ref (e.g. 'the Submit button' or '@button-1')")
+  .argument("<target>", "Visual description or @ref of the element")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
   .action(async (target, opts) => {
     const cfg = getConfig();
-    const provider = getProvider(cfg.vlm.provider);
     const url = opts.url ?? cfg.browser.url;
-
     if (url) await browser.navigate(url);
+
+    // @ref shortcut: use saved DOM state, no VLM needed
+    if (target.startsWith("@")) {
+      const coords = resolveDomRef(target);
+      if (!coords) { await browser.close(); process.exit(1); }
+      await browser.clickAt(coords.x, coords.y);
+      console.log(JSON.stringify({ clicked: target, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
+      await browser.close();
+      return;
+    }
+
+    const provider = getProvider(cfg.vlm.provider);
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
     });
@@ -390,7 +423,7 @@ program
     const x = result.x as number;
     const y = result.y as number;
     await browser.clickAt(x, y);
-    console.log(JSON.stringify({ clicked: target, x, y, confidence: result.confidence }, null, 2));
+    console.log(JSON.stringify({ clicked: target, x, y, confidence: result.confidence, via: "vlm" }, null, 2));
     await browser.close();
   });
 
@@ -398,19 +431,31 @@ program
 
 program
   .command("type")
-  .description("Type text into a field located by visual description")
+  .description("Type text into a field located by visual description or @ref")
   .argument("<text>", "Text to type")
-  .requiredOption("--into <target>", "Visual description of the target field (e.g. 'email input')")
+  .requiredOption("--into <target>", "Visual description or @ref of the target field")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
   .action(async (text, opts) => {
     const cfg = getConfig();
-    const provider = getProvider(cfg.vlm.provider);
     const url = opts.url ?? cfg.browser.url;
-
     if (url) await browser.navigate(url);
+
+    // @ref shortcut
+    if (opts.into.startsWith("@")) {
+      const coords = resolveDomRef(opts.into);
+      if (!coords) { await browser.close(); process.exit(1); }
+      await browser.clickAt(coords.x, coords.y);
+      await browser.waitForTimeout(150);
+      await browser.clearAndType(text);
+      console.log(JSON.stringify({ typed: text, into: opts.into, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
+      await browser.close();
+      return;
+    }
+
+    const provider = getProvider(cfg.vlm.provider);
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
     });
@@ -442,6 +487,7 @@ program
       x: locateResult.x,
       y: locateResult.y,
       confidence: locateResult.confidence,
+      via: "vlm",
     }, null, 2));
     await browser.close();
   });
@@ -450,18 +496,28 @@ program
 
 program
   .command("hover")
-  .description("Hover over an element by visual description")
-  .argument("<target>", "Visual description of the element (e.g. 'the first menu item')")
+  .description("Hover over an element by visual description or @ref")
+  .argument("<target>", "Visual description or @ref of the element")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
   .action(async (target, opts) => {
     const cfg = getConfig();
-    const provider = getProvider(cfg.vlm.provider);
     const url = opts.url ?? cfg.browser.url;
-
     if (url) await browser.navigate(url);
+
+    // @ref shortcut
+    if (target.startsWith("@")) {
+      const coords = resolveDomRef(target);
+      if (!coords) { await browser.close(); process.exit(1); }
+      await browser.hoverAt(coords.x, coords.y);
+      console.log(JSON.stringify({ hovered: target, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
+      await browser.close();
+      return;
+    }
+
+    const provider = getProvider(cfg.vlm.provider);
     const { dataUrl } = await captureAndEncode({
       viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
     });
@@ -480,7 +536,7 @@ program
     }
 
     await browser.hoverAt(result.x as number, result.y as number);
-    console.log(JSON.stringify({ hovered: target, x: result.x, y: result.y, confidence: result.confidence }, null, 2));
+    console.log(JSON.stringify({ hovered: target, x: result.x, y: result.y, confidence: result.confidence, via: "vlm" }, null, 2));
     await browser.close();
   });
 
@@ -706,10 +762,11 @@ program
 
 program
   .command("dom-verify")
-  .description("Batch DOM structure + CSS token discovery")
+  .description("Batch DOM structure + CSS token discovery (with element refs)")
   .option("--url <url>", "Target URL (navigate first)")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
+  .option("--save", "Save to .spark-e2e/dom-state.json for @ref lookups")
   .action(async (opts) => {
     const cfg = getConfig();
     
@@ -732,9 +789,14 @@ program
     const jsCode = `(function() {
   var root = document.getElementById('root') || document.querySelector('#app, [class*="app"]');
   var main = root ? root.firstElementChild : null;
+  var idx = 0;
   var layout = Array.from(main ? main.children : document.body.children).map(function(c) {
     var r = c.getBoundingClientRect();
-    return {tag: c.tagName, classes: (c.className||'').slice(0,60), role: c.getAttribute('role')||'', top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height), text: (c.textContent||'').trim().slice(0,40)};
+    idx++;
+    var name = c.getAttribute('aria-label') || c.getAttribute('name') || c.getAttribute('placeholder') || '';
+    var text = (c.textContent||'').trim().slice(0,40);
+    var ref = '@' + (name ? name.replace(/[^a-zA-Z0-9]/g, '-').slice(0,20) + '-' + c.tagName.toLowerCase() : c.tagName.toLowerCase() + '-' + idx);
+    return {ref: ref, tag: c.tagName, classes: (c.className||'').slice(0,60), role: c.getAttribute('role')||'', center: {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)}, top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height), text: text};
   });
   var classPrefixes = new Set();
   var all = Array.from(document.querySelectorAll('[class]'));
@@ -753,7 +815,20 @@ program
   return {layout: layout, classPrefixes: Array.from(classPrefixes).sort().slice(0,30), cssVars: cssVars};
 })()`;
 
-    const result = await browser.executeJs(jsCode);
+    const result = await browser.executeJs(jsCode) as {
+      layout: Array<{ ref: string; tag: string; center: { x: number; y: number }; text: string }>;
+      classPrefixes: string[];
+      cssVars: Record<string, string>;
+    };
+
+    // --save: persist to disk for @ref resolution by click/type/hover
+    if (opts.save) {
+      const domStatePath = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+      mkdirSync(dirname(domStatePath), { recursive: true });
+      writeFileSync(domStatePath, JSON.stringify(result, null, 2));
+      console.error(`Saved: ${domStatePath} (${result.layout.length} elements)`);
+    }
+
     console.log(JSON.stringify(result, null, 2));
     await browser.close();
   });
