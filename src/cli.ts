@@ -158,8 +158,13 @@ program
   .command("run")
   .description("Run YAML test scenarios (default: tests/*.yaml)")
   .argument("[file]", "Specific test file or directory (default: tests/)")
-  .action(async (file) => {
-    const reports = await runTests(file || undefined);
+  .option("--storage-state <path>", "Persist browser session (cookies, localStorage) across invocations")
+  .option("--model <model>", "VLM model override for all scenarios in this run")
+  .action(async (file, opts) => {
+    const reports = await runTests(file || undefined, {
+      storageStatePath: opts.storageState,
+      model: opts.model,
+    });
 
     if (reports.length === 0) process.exit(1);
 

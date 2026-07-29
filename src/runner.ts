@@ -22,6 +22,7 @@ interface TestSuite {
   config?: {
     url?: string;
     viewport?: { width?: number; height?: number };
+    vlm?: { model?: string };
   };
   scenarios: Scenario[];
 }
@@ -72,6 +73,7 @@ async function runStep(
   cfg: ReturnType<typeof getConfig>,
   baseUrl: string,
   outputDir: string,
+  model?: string,
 ): Promise<StepResult> {
   const started = Date.now();
 
@@ -118,7 +120,7 @@ async function runStep(
       await browser.clickAt(coords.x, coords.y);
       return { step: step as Record<string, unknown>, pass: true, type: "click", detail: `${step.click} (${coords.x}, ${coords.y}) [dom-ref]`, durationMs: Date.now() - started };
     }
-    const locate = await locateElement(provider, cfg, dataUrl, step.click);
+    const locate = await locateElement(provider, cfg, dataUrl, step.click, model);
     if (!locate.found) return { step: step as Record<string, unknown>, pass: false, type: "click", detail: `Not found: ${locate.reasoning}`, durationMs: Date.now() - started };
     await browser.clickAt(locate.x, locate.y);
     return { step: step as Record<string, unknown>, pass: true, type: "click", detail: `(${locate.x}, ${locate.y})`, durationMs: Date.now() - started };
@@ -134,7 +136,7 @@ async function runStep(
       await browser.clearAndType(step.type.text);
       return { step: step as Record<string, unknown>, pass: true, type: "type", detail: `[masked] into ${step.type.into} [dom-ref]`, durationMs: Date.now() - started };
     }
-    const locate = await locateElement(provider, cfg, dataUrl, step.type.into);
+    const locate = await locateElement(provider, cfg, dataUrl, step.type.into, model);
     if (!locate.found) return { step: step as Record<string, unknown>, pass: false, type: "type", detail: `Target not found: ${locate.reasoning}`, durationMs: Date.now() - started };
     await browser.clickAt(locate.x, locate.y);
     await browser.waitForTimeout(150);
@@ -150,7 +152,7 @@ async function runStep(
       await browser.hoverAt(coords.x, coords.y);
       return { step: step as Record<string, unknown>, pass: true, type: "hover", detail: `${step.hover} (${coords.x}, ${coords.y}) [dom-ref]`, durationMs: Date.now() - started };
     }
-    const locate = await locateElement(provider, cfg, dataUrl, step.hover);
+    const locate = await locateElement(provider, cfg, dataUrl, step.hover, model);
     if (!locate.found) return { step: step as Record<string, unknown>, pass: false, type: "hover", detail: `Not found: ${locate.reasoning}`, durationMs: Date.now() - started };
     await browser.hoverAt(locate.x, locate.y);
     return { step: step as Record<string, unknown>, pass: true, type: "hover", detail: `(${locate.x}, ${locate.y})`, durationMs: Date.now() - started };
@@ -159,7 +161,7 @@ async function runStep(
   // ── test ──
   if ("test" in step) {
     const prompt = getTestPrompt(step.test, cfg.prompts.strictness);
-    const raw = await provider.chat(prompt, dataUrl, undefined, cfg.vlm.thinkingBudget);
+    const raw = await provider.chat(prompt, dataUrl, model, cfg.vlm.thinkingBudget);
     let result: Record<string, unknown> = {};
     try { result = extractJson(raw) as Record<string, unknown>; } catch { result = { pass: false, summary: raw.slice(0, 200) }; }
     const pass = result.pass === true;
@@ -176,7 +178,7 @@ async function runStep(
       "",
       'Respond ONLY with JSON: {"pass": true|false, "confidence": "high"|"medium"|"low", "observation": "...", "reasoning": "..."}',
     ].join("\n");
-    const raw = await provider.chat(prompt, dataUrl, undefined, cfg.vlm.thinkingBudget);
+    const raw = await provider.chat(prompt, dataUrl, model, cfg.vlm.thinkingBudget);
     let result: Record<string, unknown> = {};
     try { result = extractJson(raw) as Record<string, unknown>; } catch { result = { pass: false, reasoning: raw.slice(0, 200) }; }
     const pass = result.pass === true;
@@ -220,9 +222,10 @@ async function locateElement(
   cfg: ReturnType<typeof getConfig>,
   dataUrl: string,
   target: string,
+  model?: string,
 ): Promise<LocateResult> {
   const prompt = getLocatePrompt(target);
-  const raw = await provider.chat(prompt, dataUrl, undefined, cfg.vlm.thinkingBudget);
+  const raw = await provider.chat(prompt, dataUrl, model, cfg.vlm.thinkingBudget);
   try {
     const result = extractJson(raw) as Record<string, unknown>;
     return {
@@ -238,7 +241,7 @@ async function locateElement(
 
 // ── Run one file ──────────────────────────────────────────
 
-async function runFile(yamlPath: string): Promise<RunReport> {
+async function runFile(yamlPath: string, opts?: { storageStatePath?: string; model?: string }): Promise<RunReport> {
   const started = Date.now();
   const raw = readFileSync(yamlPath, "utf-8");
   const suite = interpolateEnvVars(yaml.load(raw)) as unknown as TestSuite;
@@ -249,8 +252,17 @@ async function runFile(yamlPath: string): Promise<RunReport> {
 
   const cfg = getConfig();
   const browser = new PlaywrightBrowser();
+
+  // Wire up storage state for session persistence across runs
+  if (opts?.storageStatePath) {
+    browser.setStorageStatePath(resolve(opts.storageStatePath));
+  }
+
   const provider = getProvider(cfg.vlm.provider);
   const baseUrl = suite.config?.url || cfg.browser.url || "";
+
+  // Model priority: CLI --model > YAML config.vlm.model > .spark-e2e.yaml default
+  const model = opts?.model ?? suite.config?.vlm?.model;
 
   // Apply viewport from YAML config if present
   if (suite.config?.viewport?.width && suite.config?.viewport?.height) {
@@ -275,7 +287,7 @@ async function runFile(yamlPath: string): Promise<RunReport> {
     const stepResults: StepResult[] = [];
 
     for (const step of scenario.steps) {
-      const result = await runStep(step, browser, provider, cfg, baseUrl, outputDir);
+      const result = await runStep(step, browser, provider, cfg, baseUrl, outputDir, model);
       const icon = result.pass ? "✓" : "✗";
       console.error(`    ${icon} ${result.type}: ${result.detail.slice(0, 80)}`);
       stepResults.push(result);
@@ -336,7 +348,7 @@ function scanDir(dir: string): string[] {
 
 // ── Public API ─────────────────────────────────────────────
 
-export async function runTests(pattern?: string): Promise<RunReport[]> {
+export async function runTests(pattern?: string, opts?: { storageStatePath?: string; model?: string }): Promise<RunReport[]> {
   const files = findTestFiles(pattern);
 
   if (files.length === 0) {
@@ -349,7 +361,7 @@ export async function runTests(pattern?: string): Promise<RunReport[]> {
   for (const file of files) {
     console.error(`\n📄 ${file}`);
     try {
-      const report = await runFile(file);
+      const report = await runFile(file, opts);
       reports.push(report);
       const status = report.pass ? "✓ PASS" : "✗ FAIL";
       console.error(`  ${status} (${(report.durationMs / 1000).toFixed(1)}s)`);
