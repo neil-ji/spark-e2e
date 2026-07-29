@@ -6,6 +6,7 @@
  *
  * Commands:
  *   setup        Interactive configuration wizard
+ *   run          Run YAML test scenarios (tests/*.yaml)
  *   navigate     Load a URL in the browser
  *   snapshot     Capture a browser screenshot
  *   inspect      Free-form VLM screenshot analysis
@@ -94,6 +95,7 @@ import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
 import { getProvider } from "./vlm/index.js";
 import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getLocatePrompt, getAestheticsPrompt } from "./prompts.js";
 import { saveBaseline, loadBaseline, listBaselines, deleteBaseline, readBaselineScreenshot } from "./baselines.js";
+import { runTests } from "./runner.js";
 
 const program = new Command();
 
@@ -124,6 +126,36 @@ program
     const cfg = getConfig();
     const { setupCommand } = await import("./setup.js");
     await setupCommand({ dir: opts.dir, yes: opts.yes, apiKey: opts.apiKey, baseUrl: opts.baseUrl });
+  });
+
+// ── run ───────────────────────────────────────────────────
+
+program
+  .command("run")
+  .description("Run YAML test scenarios (default: tests/*.yaml)")
+  .argument("[file]", "Specific test file or directory (default: tests/)")
+  .action(async (file) => {
+    const reports = await runTests(file || undefined);
+
+    if (reports.length === 0) process.exit(1);
+
+    // Print summary
+    const totalScenarios = reports.reduce((sum, r) => sum + r.scenarios.length, 0);
+    const failedScenarios = reports.reduce((sum, r) => sum + r.scenarios.filter(s => !s.pass).length, 0);
+    const totalDuration = reports.reduce((sum, r) => sum + r.durationMs, 0);
+
+    const summary = {
+      files: reports.length,
+      passed: reports.filter(r => r.pass).length,
+      failed: reports.filter(r => !r.pass).length,
+      scenarios: totalScenarios,
+      scenariosPassed: totalScenarios - failedScenarios,
+      scenariosFailed: failedScenarios,
+      durationMs: totalDuration,
+    };
+
+    console.log(JSON.stringify(summary, null, 2));
+    process.exit(summary.failed > 0 ? 1 : 0);
   });
 
 // ── navigate ─────────────────────────────────────────────

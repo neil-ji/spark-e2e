@@ -1,0 +1,22 @@
+# Example test suite for spark-e2e
+# Run with: spark-e2e run
+
+name: "Example Smoke Tests"
+config:
+  url: "http://localhost:5173"
+  viewport:
+    width: 1600
+    height: 1200
+
+scenarios:
+  - name: "Homepage loads and renders"
+    steps:
+      - navigate: "/"
+      - wait: 0.5
+      - test: "The page shows a working web application with a navigation bar and main content area"
+
+  - name: "Navigation is present"
+    steps:
+      - navigate: "/"
+      - wait: 0.5
+      - assert: "There is a visible navigation element on the page"
