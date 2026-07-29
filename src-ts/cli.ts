@@ -111,10 +111,13 @@ program
   .command("setup")
   .description("Interactive setup wizard — configure VLM, browser, and install skills")
   .option("--dir <path>", "Project directory (default: current directory)")
+  .option("--yes", "Skip prompts, use defaults for everything")
+  .option("--api-key <key>", "VLM API key (for --yes mode)")
+  .option("--base-url <url>", "VLM base URL (for --yes mode)")
   .action(async (opts) => {
     const cfg = getConfig();
     const { setupCommand } = await import("./setup.js");
-    await setupCommand({ dir: opts.dir });
+    await setupCommand({ dir: opts.dir, yes: opts.yes, apiKey: opts.apiKey, baseUrl: opts.baseUrl });
   });
 
 // ── navigate ─────────────────────────────────────────────
