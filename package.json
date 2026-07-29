@@ -1,6 +1,6 @@
 {
   "name": "spark-e2e",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "VLM-powered visual E2E testing for the web — one command per action, no server needed. Works with Claude Code, Codex, Qoder, Trae.",
   "type": "module",
   "main": "dist/cli.js",
