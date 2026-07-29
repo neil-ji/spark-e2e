@@ -12,6 +12,10 @@ node_modules/
 # Env
 .env
 
+# Config (may contain secrets via env var interpolation, kept local)
+.spark-e2e.yaml
+.spark-e2e.yml
+
 # OS
 .DS_Store
 Thumbs.db
@@ -20,5 +24,5 @@ Thumbs.db
 .spark/skills/
 
 # spark-e2e generated artifacts
-.spark-e2e/baselines/
-.spark-e2e/runs/
+.spark/plugin/e2e/baselines/
+.spark/plugin/e2e/runs/

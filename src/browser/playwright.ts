@@ -37,6 +37,85 @@ export class PlaywrightBrowser {
     this.module = null;
   }
 
+  // ── Security: sensitive field masking ──────────────────
+
+  /**
+   * Mask sensitive fields (passwords, secrets, tokens) before screenshot capture.
+   * Replaces input values with "***" and clears text content matching credential patterns.
+   * Selectors are configurable via security.mask_selectors in .spark-e2e.yaml.
+   */
+  async maskSensitiveFields(maskSelectors: string[]): Promise<void> {
+    const page = await this.ensurePage();
+    const selectors = maskSelectors.length > 0
+      ? maskSelectors
+      : ['input[type="password"]'];
+
+    try {
+      await page.evaluate((sels: string[]) => {
+        // 1. Mask matched input fields
+        for (const sel of sels) {
+          try {
+            document.querySelectorAll(sel).forEach((el) => {
+              const input = el as HTMLInputElement;
+              if (input.value) input.value = "***";
+              // Also mask placeholder if it looks like a credential hint
+              if (input.placeholder && /secret|token|key|password/i.test(input.placeholder)) {
+                input.placeholder = "***";
+              }
+            });
+          } catch {
+            // Invalid CSS selector — skip
+          }
+        }
+
+        // 2. Mask text nodes containing likely API key / secret patterns
+        const credentialPatterns = [
+          /\bAKID[A-Za-z0-9]{16,}\b/g,        // AWS Access Key ID
+          /\bsk-[A-Za-z0-9]{20,}\b/g,          // OpenAI / Anthropic-style keys
+          /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b/g, // JWT tokens
+          /\b[a-zA-Z0-9+/]{40,}={0,2}\b/g,     // Base64-encoded secrets
+        ];
+
+        // Walk text nodes in the body and replace matching text
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode: (node) => {
+              // Skip password fields, script/style tags, and empty text
+              const parent = node.parentElement;
+              if (!parent) return NodeFilter.FILTER_REJECT;
+              const tag = parent.tagName.toLowerCase();
+              if (tag === "script" || tag === "style" || tag === "input") {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return (node.textContent?.trim().length ?? 0) > 0
+                ? NodeFilter.FILTER_ACCEPT
+                : NodeFilter.FILTER_REJECT;
+            },
+          }
+        );
+
+        let node: Text | null;
+        while ((node = walker.nextNode() as Text | null)) {
+          let text = node.textContent ?? "";
+          let changed = false;
+          for (const pattern of credentialPatterns) {
+            if (pattern.test(text)) {
+              text = text.replace(pattern, "[credential redacted]");
+              changed = true;
+            }
+          }
+          if (changed) {
+            node.textContent = text;
+          }
+        }
+      }, selectors);
+    } catch {
+      // Masking is best-effort — never fail a screenshot over it
+    }
+  }
+
   // ── Screenshot ───────────────────────────────────────
 
   async captureScreenshot(opts?: {
@@ -47,6 +126,7 @@ export class PlaywrightBrowser {
     fullPage?: boolean;
     format?: "png" | "jpeg";
     quality?: number;
+    maskSelectors?: string[];
   }): Promise<Buffer> {
     const page = await this.ensurePage();
 
@@ -65,6 +145,11 @@ export class PlaywrightBrowser {
 
     if ((opts?.delay ?? 0) > 0) {
       await new Promise((r) => setTimeout(r, opts!.delay! * 1000));
+    }
+
+    // Mask sensitive fields before capture to prevent credential leakage
+    if (opts?.maskSelectors) {
+      await this.maskSensitiveFields(opts.maskSelectors);
     }
 
     const screenshotOpts: Record<string, unknown> = { type: opts?.format ?? "png" };

@@ -49,12 +49,24 @@ const PromptsConfigSchema = z.object({
   strictness: z.enum(["standard", "strict", "relaxed"]).default("standard"),
 });
 
+const SecurityConfigSchema = z.object({
+  maskSelectors: z.array(z.string()).default([
+    'input[type="password"]',
+    'input[name*="password" i]',
+    'input[name*="secret" i]',
+    'input[name*="token" i]',
+    'input[name*="apikey" i]',
+    'input[name*="api_key" i]',
+  ]),
+});
+
 export const ConfigSchema = z.object({
   browser: BrowserConfigSchema.default({}),
   viewport: ViewportConfigSchema.default({}),
   vlm: VLMConfigSchema.default({}),
   selectors: SelectorsConfigSchema.default({}),
   prompts: PromptsConfigSchema.default({}),
+  security: SecurityConfigSchema.default({}),
   cssVariables: z.array(z.string()).default([]),
   aestheticsFile: z.string().default("AESTHETICS.md"),
 });
@@ -74,6 +86,16 @@ const DEFAULT_CONFIG: Config = {
     sidebarItem: '[class*="sidebar"] [class*="item"], [class*="menu"] [class*="item"]',
   },
   prompts: { strictness: "standard" },
+  security: {
+    maskSelectors: [
+      'input[type="password"]',
+      'input[name*="password" i]',
+      'input[name*="secret" i]',
+      'input[name*="token" i]',
+      'input[name*="apikey" i]',
+      'input[name*="api_key" i]',
+    ],
+  },
   cssVariables: [],
   aestheticsFile: "AESTHETICS.md",
 };
@@ -178,6 +200,13 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
     }
   }
 
+  const sec = data.security as Record<string, unknown> | undefined;
+  if (sec) {
+    if (Array.isArray(sec.mask_selectors)) {
+      config.security.maskSelectors = sec.mask_selectors.map(String);
+    }
+  }
+
   if (typeof data.aesthetics_file === "string") {
     config.aestheticsFile = data.aesthetics_file as string;
   }
@@ -231,7 +260,7 @@ function loadDotenv(): void {
   }
 
   // 3. User-level global .env (always loaded as fallback)
-  const globalEnv = resolve(homedir(), ".spark-e2e", ".env");
+  const globalEnv = resolve(homedir(), ".spark", "plugin", "e2e", ".env");
   if (existsSync(globalEnv)) {
     dotenvConfig({ path: globalEnv, override: false }); // don't override project values
   }

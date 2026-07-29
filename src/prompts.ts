@@ -5,6 +5,20 @@
  * Strictness level is configurable via ``prompts.strictness`` in config.
  */
 
+// ── Credential safety guardrails (applied to ALL VLM prompts) ──
+
+const CREDENTIAL_SAFETY_RULES = [
+  "CREDENTIAL SAFETY RULES:",
+  "- NEVER include passwords, API keys, access tokens, secret keys, or any other",
+  "  credentials in your response. If you see a credential visible on screen,",
+  '  do NOT quote or transcribe it. Instead say "[credential visible]".',
+  "- If you see what looks like an API key (e.g. long random strings, patterns like",
+  "  sk-*, AKID*, eyJ*), access token, or password on screen, note its presence",
+  "  but NEVER reproduce its value.",
+  "- For password fields: report that a password field is present and whether it",
+  "  appears filled, but never attempt to read or quote its contents.",
+].join("\n");
+
 // ── Base guardrails (applied at all strictness levels) ──
 
 const BASE_HALLUCINATION_RULES = [
@@ -18,6 +32,12 @@ const BASE_HALLUCINATION_RULES = [
   "  (zero errors), don't assume it's negative.",
   "- Distinguish between a rendering bug vs. actual UI content before reporting.",
 ].join("\n");
+
+// ── Combined: base + credential safety ──
+
+function withCredentialSafety(prompt: string): string {
+  return CREDENTIAL_SAFETY_RULES + "\n\n" + prompt;
+}
 
 // ── Assert-specific guardrails ──────────────────────────
 
@@ -51,14 +71,14 @@ export function getReviewPrompt(strictness = "standard"): string {
   let prompt = BASE_HALLUCINATION_RULES;
   if (strictness === "strict") prompt += "\n" + STRICT_ADDENDUM;
   else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
-  return prompt;
+  return withCredentialSafety(prompt);
 }
 
 export function getAssertPrompt(strictness = "standard"): string {
   let prompt = BASE_ASSERT_RULES;
   if (strictness === "strict") prompt += "\n" + STRICT_ADDENDUM;
   else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
-  return prompt;
+  return withCredentialSafety(prompt);
 }
 
 // ── Test-specific guardrails ──────────────────────────
@@ -85,7 +105,7 @@ export function getTestPrompt(expectations: string, strictness = "standard"): st
   if (strictness === "strict") prompt += "\n" + STRICT_ADDENDUM;
   else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
   prompt += "\n\nRespond ONLY with JSON: {\"pass\": true|false, \"confidence\": \"high\"|\"medium\"|\"low\", \"checks\": [{\"expectation\": \"...\", \"pass\": true|false, \"confidence\": \"high\"|\"medium\"|\"low\", \"observation\": \"...\", \"reasoning\": \"...\"}], \"summary\": \"...\"}";
-  return prompt;
+  return withCredentialSafety(prompt);
 }
 
 // ── Baseline comparison prompt ──────────────────────────
@@ -110,7 +130,7 @@ const BASELINE_COMPARE_RULES = [
 ].join("\n");
 
 export function getBaselineComparePrompt(baselineName: string): string {
-  return (
+  return withCredentialSafety(
     BASELINE_COMPARE_RULES +
     `\n\nBaseline name: "${baselineName}"` +
     '\n\nRespond ONLY with JSON: {"match": true|false, "confidence": "high"|"medium"|"low", "changes": [{"region": "...", "type": "added"|"removed"|"changed"|"layout_shift", "severity": "critical"|"major"|"minor", "description": "..."}], "summary": "..."}'
@@ -135,7 +155,7 @@ const LOCATE_RULES = [
 ].join("\n");
 
 export function getLocatePrompt(target: string): string {
-  return (
+  return withCredentialSafety(
     LOCATE_RULES +
     `\n\nFind this element: "${target}"` +
     '\n\nRespond ONLY with JSON: {"found": true|false, "element": "...", "x": number, "y": number, "confidence": "high"|"medium"|"low", "reasoning": "..."}'

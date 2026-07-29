@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getTestPrompt, getLocatePrompt, getBaselineComparePrompt } from "../prompts.js";
+import { getTestPrompt, getLocatePrompt, getBaselineComparePrompt, getReviewPrompt, getAssertPrompt } from "../prompts.js";
 
 describe("getTestPrompt", () => {
   it("includes expectations in output", () => {
@@ -79,4 +79,34 @@ describe("getBaselineComparePrompt", () => {
     const prompt = getBaselineComparePrompt("v1");
     expect(prompt).toContain("Anti-aliasing");
   });
+});
+
+// ── Tier 0.3: Credential safety rules ──────────────────────
+
+const ALL_PROMPTS = {
+  getTestPrompt: () => getTestPrompt("check login", "standard"),
+  getLocatePrompt: () => getLocatePrompt("Submit button"),
+  getBaselineComparePrompt: () => getBaselineComparePrompt("v1"),
+  getReviewPrompt: () => getReviewPrompt("standard"),
+  getAssertPrompt: () => getAssertPrompt("standard"),
+};
+
+describe("credential safety in all prompts", () => {
+  for (const [name, fn] of Object.entries(ALL_PROMPTS)) {
+    it(`${name} includes CREDENTIAL SAFETY RULES`, () => {
+      const prompt = fn();
+      expect(prompt).toContain("CREDENTIAL SAFETY RULES");
+    });
+
+    it(`${name} bans credential transcription`, () => {
+      const prompt = fn();
+      expect(prompt).toContain("credential visible");
+    });
+
+    it(`${name} bans password/API key quoting`, () => {
+      const prompt = fn();
+      expect(prompt).toContain("passwords");
+      expect(prompt).toContain("API keys");
+    });
+  }
 });

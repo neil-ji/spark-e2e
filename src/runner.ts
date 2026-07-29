@@ -9,7 +9,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, basename, extname } from "node:path";
 import * as yaml from "js-yaml";
-import { getConfig } from "./config.js";
+import { getConfig, interpolateEnvVars } from "./config.js";
 import { PlaywrightBrowser } from "./browser/playwright.js";
 import { getProvider } from "./vlm/index.js";
 import { getTestPrompt, getAssertPrompt, getLocatePrompt } from "./prompts.js";
@@ -99,7 +99,7 @@ async function runStep(
 
   // ── VLM-based steps (click, type, hover, test, assert) ──
 
-  const { dataUrl } = await captureCurrent(browser);
+  const { dataUrl } = await captureCurrent(browser, cfg);
 
   // ── click ──
   if ("click" in step) {
@@ -123,14 +123,14 @@ async function runStep(
       await browser.clickAt(coords.x, coords.y);
       await browser.waitForTimeout(150);
       await browser.clearAndType(step.type.text);
-      return { step: step as Record<string, unknown>, pass: true, type: "type", detail: `"${step.type.text}" into ${step.type.into} [dom-ref]`, durationMs: Date.now() - started };
+      return { step: step as Record<string, unknown>, pass: true, type: "type", detail: `[masked] into ${step.type.into} [dom-ref]`, durationMs: Date.now() - started };
     }
     const locate = await locateElement(provider, cfg, dataUrl, step.type.into);
     if (!locate.found) return { step: step as Record<string, unknown>, pass: false, type: "type", detail: `Target not found: ${locate.reasoning}`, durationMs: Date.now() - started };
     await browser.clickAt(locate.x, locate.y);
     await browser.waitForTimeout(150);
     await browser.clearAndType(step.type.text);
-    return { step: step as Record<string, unknown>, pass: true, type: "type", detail: `"${step.type.text}" into (${locate.x}, ${locate.y})`, durationMs: Date.now() - started };
+    return { step: step as Record<string, unknown>, pass: true, type: "type", detail: `[masked] into (${locate.x}, ${locate.y})`, durationMs: Date.now() - started };
   }
 
   // ── hover ──
@@ -180,14 +180,14 @@ async function runStep(
 
 // ── Helpers ────────────────────────────────────────────────
 
-async function captureCurrent(browser: PlaywrightBrowser): Promise<{ dataUrl: string }> {
-  const buf = await browser.captureScreenshot({ reload: false });
+async function captureCurrent(browser: PlaywrightBrowser, cfg: ReturnType<typeof getConfig>): Promise<{ dataUrl: string }> {
+  const buf = await browser.captureScreenshot({ reload: false, maskSelectors: cfg.security.maskSelectors });
   const raw = Buffer.isBuffer(buf) ? buf : Buffer.from(buf as ArrayBuffer);
   return { dataUrl: browser.toDataUrl(raw) };
 }
 
 function resolveDomRef(ref: string): { x: number; y: number } | null {
-  const domStatePath = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+  const domStatePath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
   if (!existsSync(domStatePath)) return null;
   try {
     const state = JSON.parse(readFileSync(domStatePath, "utf-8"));
@@ -232,7 +232,7 @@ async function locateElement(
 async function runFile(yamlPath: string): Promise<RunReport> {
   const started = Date.now();
   const raw = readFileSync(yamlPath, "utf-8");
-  const suite = yaml.load(raw) as TestSuite;
+  const suite = interpolateEnvVars(yaml.load(raw)) as unknown as TestSuite;
 
   if (!suite.scenarios || !Array.isArray(suite.scenarios)) {
     throw new Error(`Invalid test file: ${yamlPath} — missing "scenarios" list`);
@@ -252,7 +252,7 @@ async function runFile(yamlPath: string): Promise<RunReport> {
     });
   }
 
-  const outputDir = resolve(process.cwd(), ".spark-e2e", "runs", basename(yamlPath, ".yaml"));
+  const outputDir = resolve(process.cwd(), ".spark", "plugin", "e2e", "runs", basename(yamlPath, ".yaml"));
 
   const scenarioResults: ScenarioResult[] = [];
 

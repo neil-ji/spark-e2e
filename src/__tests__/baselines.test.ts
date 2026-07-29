@@ -9,7 +9,7 @@ import {
   readBaselineScreenshot,
 } from "../baselines.js";
 
-const TMP_BASELINES = resolve(process.cwd(), ".spark-e2e", "baselines");
+const TMP_BASELINES = resolve(process.cwd(), ".spark", "plugin", "e2e", "baselines");
 
 describe("baselines CRUD", () => {
   beforeEach(() => {

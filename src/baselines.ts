@@ -2,7 +2,7 @@
  * Baseline storage — reference screenshots for visual regression comparison.
  *
  * Storage layout:
- *   .spark-e2e/baselines/<name>/
+ *   .spark/plugin/e2e/baselines/<name>/
  *     screenshot.png   — reference screenshot
  *     meta.json        — { name, url, viewport, timestamp, model, findings? }
  */
@@ -43,7 +43,7 @@ export interface CompareResult {
 // ── Paths ──────────────────────────────────────────────────
 
 function baselinesDir(): string {
-  const dir = resolve(process.cwd(), ".spark-e2e", "baselines");
+  const dir = resolve(process.cwd(), ".spark", "plugin", "e2e", "baselines");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }

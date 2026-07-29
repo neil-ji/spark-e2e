@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractJson, balanceJson } from "../vlm/openai-compat.js";
-import { interpolateEnvVars } from "../config.js";
+import { interpolateEnvVars, ConfigSchema } from "../config.js";
 
 describe("extractJson", () => {
   it("plain JSON", () => expect(extractJson('{"a":1}')).toEqual({ a: 1 }));
@@ -40,5 +40,41 @@ describe("CLI AGENTS", () => {
   it("has all 5 agents", async () => {
     const { AGENTS } = await import("../cli.js");
     expect(AGENTS).toHaveLength(5);
+  });
+});
+
+// ── Tier 1.1: Security config schema ───────────────────────
+
+describe("security config", () => {
+  it("schema default maskSelectors include password, secret, token fields", () => {
+    const result = ConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const sels = result.data.security.maskSelectors;
+      expect(sels.length).toBeGreaterThan(0);
+      expect(sels.some((s: string) => s.includes("password"))).toBe(true);
+      expect(sels.some((s: string) => s.includes("secret"))).toBe(true);
+      expect(sels.some((s: string) => s.includes("token"))).toBe(true);
+    }
+  });
+
+  it("custom maskSelectors override defaults", () => {
+    const result = ConfigSchema.safeParse({
+      security: { maskSelectors: ['.secret-field', '#api-key-display'] },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.security.maskSelectors).toEqual(['.secret-field', '#api-key-display']);
+    }
+  });
+
+  it("empty maskSelectors array is valid", () => {
+    const result = ConfigSchema.safeParse({
+      security: { maskSelectors: [] },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.security.maskSelectors).toHaveLength(0);
+    }
   });
 });

@@ -108,7 +108,11 @@ async function captureAndEncode(opts?: {
   format?: "png" | "jpeg";
   quality?: number;
 }): Promise<{ dataUrl: string; buf: Buffer }> {
-  const raw = await browser.captureScreenshot(opts);
+  const cfg = getConfig();
+  const raw = await browser.captureScreenshot({
+    ...opts,
+    maskSelectors: cfg.security.maskSelectors,
+  });
   const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
   return { dataUrl: browser.toDataUrl(buf), buf };
 }
@@ -120,12 +124,23 @@ program
   .description("Interactive setup wizard — configure VLM, browser, and install skills")
   .option("--dir <path>", "Project directory (default: current directory)")
   .option("--yes", "Skip prompts, use defaults for everything")
-  .option("--api-key <key>", "VLM API key (for --yes mode)")
+  .option("--api-key <key>", "VLM API key (⚠️ WARNING: may leak to shell history. Use '-' to read from stdin, or omit for interactive hidden input)")
   .option("--base-url <url>", "VLM base URL (for --yes mode)")
   .action(async (opts) => {
     const cfg = getConfig();
+
+    // Handle --api-key - (read from stdin pipe)
+    let apiKey = opts.apiKey;
+    if (apiKey === "-") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      apiKey = Buffer.concat(chunks).toString("utf-8").trim();
+    }
+
     const { setupCommand } = await import("./setup.js");
-    await setupCommand({ dir: opts.dir, yes: opts.yes, apiKey: opts.apiKey, baseUrl: opts.baseUrl });
+    await setupCommand({ dir: opts.dir, yes: opts.yes, apiKey, baseUrl: opts.baseUrl });
   });
 
 // ── run ───────────────────────────────────────────────────
@@ -357,7 +372,7 @@ program
 // ── @ref resolver (shared by click/type/hover) ────────────
 
 function resolveDomRef(ref: string): { x: number; y: number } | null {
-  const domStatePath = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+  const domStatePath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
   if (!existsSync(domStatePath)) {
     console.error(`No dom-state.json found. Run \`spark-e2e dom-verify --save\` first.`);
     return null;
@@ -766,7 +781,7 @@ program
   .option("--url <url>", "Target URL (navigate first)")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
-  .option("--save", "Save to .spark-e2e/dom-state.json for @ref lookups")
+  .option("--save", "Save to .spark/plugin/e2e/dom-state.json for @ref lookups")
   .action(async (opts) => {
     const cfg = getConfig();
     
@@ -823,7 +838,7 @@ program
 
     // --save: persist to disk for @ref resolution by click/type/hover
     if (opts.save) {
-      const domStatePath = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+      const domStatePath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
       mkdirSync(dirname(domStatePath), { recursive: true });
       writeFileSync(domStatePath, JSON.stringify(result, null, 2));
       console.error(`Saved: ${domStatePath} (${result.layout.length} elements)`);

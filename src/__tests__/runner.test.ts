@@ -5,10 +5,10 @@ import { resolve } from "node:path";
 // ── Helpers ────────────────────────────────────────────────
 
 const TMP_DIR = resolve(process.cwd(), "tests", "__tmp__");
-const TMP_STATE = resolve(process.cwd(), ".spark-e2e", "dom-state.json");
+const TMP_STATE = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
 
 function cleanup() {
-  for (const p of [TMP_DIR, TMP_STATE, resolve(process.cwd(), ".spark-e2e", "baselines", "__runner-test__")]) {
+  for (const p of [TMP_DIR, TMP_STATE, resolve(process.cwd(), ".spark", "plugin", "e2e", "baselines", "__runner-test__")]) {
     try { if (existsSync(p)) rmSync(p, { recursive: true, force: true }); } catch {}
   }
 }
@@ -53,7 +53,7 @@ describe("dom-state.json resolveDomRef", () => {
   afterEach(cleanup);
 
   it("resolveDomRef finds element by ref", () => {
-    const domStateDir = resolve(process.cwd(), ".spark-e2e");
+    const domStateDir = resolve(process.cwd(), ".spark", "plugin", "e2e");
     if (!existsSync(domStateDir)) mkdirSync(domStateDir, { recursive: true });
 
     writeFileSync(TMP_STATE, JSON.stringify({
@@ -74,7 +74,7 @@ describe("dom-state.json resolveDomRef", () => {
   });
 
   it("dom-state refs are unique", () => {
-    const domStateDir = resolve(process.cwd(), ".spark-e2e");
+    const domStateDir = resolve(process.cwd(), ".spark", "plugin", "e2e");
     if (!existsSync(domStateDir)) mkdirSync(domStateDir, { recursive: true });
 
     writeFileSync(TMP_STATE, JSON.stringify({
@@ -92,7 +92,7 @@ describe("dom-state.json resolveDomRef", () => {
 
   it("center coordinates are within viewport bounds", () => {
     // Simulated viewport 1600x1200
-    const domStateDir = resolve(process.cwd(), ".spark-e2e");
+    const domStateDir = resolve(process.cwd(), ".spark", "plugin", "e2e");
     if (!existsSync(domStateDir)) mkdirSync(domStateDir, { recursive: true });
 
     writeFileSync(TMP_STATE, JSON.stringify({

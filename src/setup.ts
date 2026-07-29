@@ -5,7 +5,7 @@
  * sensible defaults, auto-detection for everything else.
  */
 import * as p from "@clack/prompts";
-import { writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import * as yaml from "js-yaml";
@@ -468,7 +468,7 @@ export async function setupCommand(opts: {
   );
 
   // Write API key to global .env for security (never in project YAML)
-  const globalEnvDir = resolve(homedir(), ".spark-e2e");
+  const globalEnvDir = resolve(homedir(), ".spark", "plugin", "e2e");
   mkdirSync(globalEnvDir, { recursive: true });
   const globalEnvPath = resolve(globalEnvDir, ".env");
   const envLines = [
@@ -479,6 +479,7 @@ export async function setupCommand(opts: {
     `SPARK_E2E_THINKING_BUDGET=${thinkingBudget}`,
   ];
   writeFileSync(globalEnvPath, envLines.join("\n") + "\n", "utf-8");
+  chmodSync(globalEnvPath, 0o600); // owner read/write only — contains API key
 
   s.stop(`Configuration saved:
   ${fmtPath(yamlPath)}
