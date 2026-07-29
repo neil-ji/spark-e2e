@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 spark-e2e is a VLM-powered visual E2E testing CLI. Each command is a complete, self-contained action — open browser → navigate → screenshot → VLM analysis → return JSON. No persistent server needed.
 
-- **`src-ts/`** — TypeScript CLI
+- **`src/`** — TypeScript CLI
 - **`skills/`** — Shared Claude Code skills (Markdown)
 
 ## Commands
@@ -32,7 +32,7 @@ skills/                          ← Claude Code skills (Markdown)
 ├── dom-verify/SKILL.md          ← /dom-verify — DOM checks
 └── e2e-test/SKILL.md            ← /e2e-test — full test cycle
 
-src-ts/                          ← TypeScript CLI
+src/                          ← TypeScript CLI
 ├── cli.ts                       ← Commander, 13 subcommands
 ├── config.ts                    ← js-yaml + dotenv + zod, 5-layer priority
 ├── prompts.ts                   ← Anti-hallucination prompts, 3 strictness levels

@@ -107,7 +107,7 @@ skills/                    ← Claude Code skills (Markdown)
 ├── dom-verify/SKILL.md    ← /dom-verify — DOM checks
 └── e2e-test/SKILL.md      ← /e2e-test — full test cycle
 
-src-ts/                    ← TypeScript CLI (primary)
+src/                    ← TypeScript CLI (primary)
 ├── cli.ts                 ← All 9 commands
 ├── config.ts              ← YAML + env config
 ├── prompts.ts             ← Anti-hallucination prompts
