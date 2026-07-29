@@ -126,9 +126,10 @@ git tag v<new> && git push origin master v<new>
 
 ### Common Gotchas
 
-1. **VLM hallucinations are real** — always DOM-verify before making code changes.
-2. **Inline styles beat CSS** — chart/animation libraries set inline styles. `!important` may be needed.
-3. **CSS variables resolve differently in SVG** — check `getComputedStyle()`, not declared values.
-4. **Animation wrappers break grid/flex** — add `height: 100%` to wrapper + inner container.
-5. **Narrow, data-independent assertions work best** — "two cards equal height" not "TTFB shows 0.56s".
-6. **TypeScript compile is required before running** — `npm run build` or `npx tsc` after source changes.
+1. **Credentials must use env vars** — Never hardcode passwords/keys in YAML files. Use `${ENV_VAR}` in `type.text` values and create a `.env` file (gitignored) with the actual values. The runner auto-interpolates at load time.
+2. **VLM hallucinations are real** — always DOM-verify before making code changes.
+3. **Inline styles beat CSS** — chart/animation libraries set inline styles. `!important` may be needed.
+4. **CSS variables resolve differently in SVG** — check `getComputedStyle()`, not declared values.
+5. **Animation wrappers break grid/flex** — add `height: 100%` to wrapper + inner container.
+6. **Narrow, data-independent assertions work best** — "two cards equal height" not "TTFB shows 0.56s".
+7. **TypeScript compile is required before running** — `npm run build` or `npx tsc` after source changes.

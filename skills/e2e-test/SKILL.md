@@ -8,7 +8,7 @@ Runs: Navigate → Snapshot → Review → DOM Verify → Assert → Report.
 
 ## Arguments
 
-`$ARGUMENTS` is the target URL. Falls back to `browser.url` from `.spark-e2e.yaml`.
+`$ARGUMENTS` is the target URL. Pass via `--url` on each command.
 
 ## Prerequisites
 
@@ -144,13 +144,46 @@ spark-e2e assert "Sidebar has exactly one active item" --url "$ARGUMENTS"
 spark-e2e assert "No error messages or blank areas visible" --url "$ARGUMENTS"
 ```
 
+## Credentials & Secrets
+
+**Never hardcode passwords, API keys, or tokens in YAML test files.** Use environment variable interpolation:
+
+1. Create a `.env` file in the project root (already gitignored):
+```bash
+# .env
+TEST_PASSWORD=MyP@ssw0rd123
+TEST_AWS_ACCESS_KEY=AKIDxxxxxx
+TEST_API_TOKEN=eyJ...
+```
+
+2. Reference with `${VAR}` in YAML test steps:
+```yaml
+scenarios:
+  - name: login flow
+    steps:
+      - navigate: https://app.example.com/login
+      - type: { text: "${TEST_PASSWORD}", into: "password field" }
+      - click: "Sign In button"
+      - assert: "Dashboard is visible"
+```
+
+3. The runner resolves `${VAR}` at load time from environment variables (`.env` → `process.env`). The actual value never appears in logs or output (masked as `[masked]`).
+
+**Security features active during test runs:**
+- Password fields (`input[type="password"]`) are masked before screenshots — VLM never sees them
+- VLM prompts instruct the model to never transcribe credentials it sees on screen
+- Sensitive field selectors are configurable via `.spark-e2e.yaml` → `security.mask_selectors`
+
 ## Configuration
 
 Create `.spark-e2e.yaml` in your project root:
 
 ```yaml
-browser:
-  url: http://localhost:5173
+vlm:
+  provider: openai-compat
+  api_key: "${SPARK_E2E_API_KEY}"
+  base_url: "${SPARK_E2E_BASE_URL}"
+  model: gpt-4o
 
 viewport:
   width: 1600
@@ -161,14 +194,21 @@ selectors:
   card: '[class*="card"]'
   active_nav: '[aria-current="page"]'
 
-css_variables:
+prompts:
+  strictness: standard
+
+security:
+  mask_selectors:
+    - 'input[type="password"]'
+    - '[data-testid="api-key-display"]'
+    - '.secret-field'
+
+cssVariables:
   - "--color-accent"
   - "--color-text"
   - "--color-positive"
   - "--color-negative"
 ```
-
-With config in place, `--url` becomes optional.
 
 ### Style Conventions
 

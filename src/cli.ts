@@ -875,12 +875,21 @@ program
     try {
       const cfg = load();
       console.log(`  Browser: Playwright`);
-      console.log(`  URL: ${cfg.browser.url}`);
+      if (cfg.browser.url) console.log(`  URL: ${cfg.browser.url}`);
       console.log(`  VLM provider: ${cfg.vlm.provider}`);
       console.log(`  VLM model: ${cfg.vlm.model}`);
       console.log(`  API key: ${cfg.vlm.apiKey ? "***" : "(not set)"}`);
     } catch (e) {
       console.log(`✗ Config error: ${e}`);
+    }
+
+    // Check for project .env (test credentials)
+    const projectEnv = resolve(process.cwd(), ".env");
+    if (existsSync(projectEnv)) {
+      console.log(`  ✓ Project .env found (test credentials)`);
+    } else {
+      console.log(`  ⓘ  No project .env — create one for test credentials`);
+      console.log(`     e.g. TEST_PASSWORD=... and use \${TEST_PASSWORD} in YAML steps`);
     }
 
     console.log();
