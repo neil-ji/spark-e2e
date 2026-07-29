@@ -6,6 +6,9 @@ Commands:
     snapshot   Capture a browser screenshot
     inspect    Free-form VLM screenshot analysis
     assert     Run a visual assertion (pass/fail)
+    click      Click an element by visual description (VLM-located)
+    type       Type text into a VLM-located field
+    hover      Hover over an element by visual description
     compare    Compare page against expected state
     test       Natural language E2E test (navigate → review → assert in one call)
     baseline   Visual regression baselines (save, compare, list, delete)
@@ -278,6 +281,99 @@ def cmd_test(args: argparse.Namespace) -> None:
     backend.close()
 
 
+def _locate_and_interact(args: argparse.Namespace, target: str) -> dict:
+    """Shared helper: locate an element by visual description, return coordinates."""
+    import json as _json
+
+    from spark_e2e.config import load
+    from spark_e2e.browser import get_backend
+    from spark_e2e.vlm import get_provider
+    from spark_e2e import prompts as prompts_mod
+
+    cfg = load()
+    backend = get_backend(cfg.browser.backend)
+    provider = get_provider(cfg.vlm.provider)
+
+    url = args.url or cfg.browser.url
+    print(f"Navigating to {url} ...")
+    backend.navigate(url)
+
+    vp = None
+    if hasattr(args, "width") and args.width and args.height:
+        vp = {"width": args.width, "height": args.height, "deviceScaleFactor": 1}
+
+    png = backend.capture_screenshot(viewport=vp, reload=True, delay=0.3)
+    data_url = backend.to_data_url(png)
+
+    print(f'Locating: "{target}"')
+    prompt = prompts_mod.get_locate_prompt(target)
+    raw = provider.chat(prompt, data_url, args.model if hasattr(args, "model") else None, cfg.vlm.thinking_budget)
+
+    try:
+        from spark_e2e.vlm.openai_compat import extract_json
+        result = extract_json(raw)
+    except Exception:
+        result = {}
+
+    if not result.get("found"):
+        print(f"Element not found: {result.get('reasoning', 'unknown reason')}")
+        backend.close()
+        raise SystemExit(1)
+
+    return {"backend": backend, "provider": provider, "cfg": cfg, "result": result, "data_url": data_url}
+
+
+def cmd_click(args: argparse.Namespace) -> None:
+    """Click an element by visual description."""
+    import json as _json
+
+    ctx = _locate_and_interact(args, args.target)
+    backend = ctx["backend"]
+    result = ctx["result"]
+
+    backend.click_at(float(result["x"]), float(result["y"]))
+    print(_json.dumps({"clicked": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence")}, indent=2))
+    backend.close()
+
+
+def cmd_type(args: argparse.Namespace) -> None:
+    """Type text into a VLM-located field."""
+    import json as _json
+
+    ctx = _locate_and_interact(args, args.into)
+    backend = ctx["backend"]
+    result = ctx["result"]
+
+    # Click to focus
+    backend.click_at(float(result["x"]), float(result["y"]))
+    backend.wait_for_timeout(150)
+
+    # Clear + type
+    backend.clear_and_type(args.text)
+
+    print(_json.dumps({
+        "typed": args.text,
+        "into": args.into,
+        "x": result["x"],
+        "y": result["y"],
+        "confidence": result.get("confidence"),
+    }, indent=2))
+    backend.close()
+
+
+def cmd_hover(args: argparse.Namespace) -> None:
+    """Hover over an element by visual description."""
+    import json as _json
+
+    ctx = _locate_and_interact(args, args.target)
+    backend = ctx["backend"]
+    result = ctx["result"]
+
+    backend.hover_at(float(result["x"]), float(result["y"]))
+    print(_json.dumps({"hovered": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence")}, indent=2))
+    backend.close()
+
+
 def cmd_baseline_save(args: argparse.Namespace) -> None:
     """Save current page as a named baseline."""
     import json as _json
@@ -443,6 +539,34 @@ def main() -> None:
     p_assert.add_argument("--reload", action="store_true", default=True, help="Reload before capture")
     p_assert.add_argument("--delay", type=float, default=0.3, help="Delay after reload")
     p_assert.set_defaults(func=cmd_assert)
+
+    # click
+    p_click = subparsers.add_parser("click", help="Click an element by visual description")
+    p_click.add_argument("target", help="Visual description of the element")
+    p_click.add_argument("--url", help="Target URL")
+    p_click.add_argument("--model", help="VLM model override")
+    p_click.add_argument("--width", type=int, help="Viewport width")
+    p_click.add_argument("--height", type=int, help="Viewport height")
+    p_click.set_defaults(func=cmd_click)
+
+    # type
+    p_type = subparsers.add_parser("type", help="Type text into a VLM-located field")
+    p_type.add_argument("text", help="Text to type")
+    p_type.add_argument("--into", required=True, help="Visual description of the target field")
+    p_type.add_argument("--url", help="Target URL")
+    p_type.add_argument("--model", help="VLM model override")
+    p_type.add_argument("--width", type=int, help="Viewport width")
+    p_type.add_argument("--height", type=int, help="Viewport height")
+    p_type.set_defaults(func=cmd_type)
+
+    # hover
+    p_hover = subparsers.add_parser("hover", help="Hover over an element by visual description")
+    p_hover.add_argument("target", help="Visual description of the element")
+    p_hover.add_argument("--url", help="Target URL")
+    p_hover.add_argument("--model", help="VLM model override")
+    p_hover.add_argument("--width", type=int, help="Viewport width")
+    p_hover.add_argument("--height", type=int, help="Viewport height")
+    p_hover.set_defaults(func=cmd_hover)
 
     # review
     p_review = subparsers.add_parser("review", help="Run a visual review")

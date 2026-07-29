@@ -11,6 +11,9 @@
  *   inspect      Free-form VLM screenshot analysis
  *   assert       Run a visual assertion (pass/fail)
  *   compare      Compare page against expected state
+ *   click        Click an element by visual description (VLM-located)
+ *   type         Type text into a VLM-located field
+ *   hover        Hover over an element by visual description
  *   test         Natural language E2E test (navigate → review → assert in one call)
  *   baseline     Visual regression baselines (save, compare, list, delete)
  *   review       Comprehensive visual UI audit
@@ -89,7 +92,7 @@ const browser = new PlaywrightBrowser();
 import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
 // browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
-import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getAestheticsPrompt } from "./prompts.js";
+import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getLocatePrompt, getAestheticsPrompt } from "./prompts.js";
 import { saveBaseline, loadBaseline, listBaselines, deleteBaseline, readBaselineScreenshot } from "./baselines.js";
 
 const program = new Command();
@@ -316,6 +319,136 @@ program
     } catch {
       console.log(raw);
     }
+    await browser.close();
+  });
+
+// ── click ─────────────────────────────────────────────────
+
+program
+  .command("click")
+  .description("Click an element by visual description (VLM locates → Playwright clicks)")
+  .argument("<target>", "Visual description of the element (e.g. 'the Submit button')")
+  .option("--url <url>", "Target URL")
+  .option("--model <model>", "VLM model override")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .action(async (target, opts) => {
+    const cfg = getConfig();
+    const provider = getProvider(cfg.vlm.provider);
+    const url = opts.url ?? cfg.browser.url;
+
+    if (url) await browser.navigate(url);
+    const { dataUrl } = await captureAndEncode({
+      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
+    });
+
+    console.error(`Locating: "${target}"`);
+    const prompt = getLocatePrompt(target);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
+
+    let result: Record<string, unknown>;
+    try { result = extractJson(raw) as Record<string, unknown>; } catch { result = {}; }
+
+    if (!result.found) {
+      console.error(`Element not found: ${result.reasoning || "unknown reason"}`);
+      await browser.close();
+      process.exit(1);
+    }
+
+    const x = result.x as number;
+    const y = result.y as number;
+    await browser.clickAt(x, y);
+    console.log(JSON.stringify({ clicked: target, x, y, confidence: result.confidence }, null, 2));
+    await browser.close();
+  });
+
+// ── type ──────────────────────────────────────────────────
+
+program
+  .command("type")
+  .description("Type text into a field located by visual description")
+  .argument("<text>", "Text to type")
+  .requiredOption("--into <target>", "Visual description of the target field (e.g. 'email input')")
+  .option("--url <url>", "Target URL")
+  .option("--model <model>", "VLM model override")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .action(async (text, opts) => {
+    const cfg = getConfig();
+    const provider = getProvider(cfg.vlm.provider);
+    const url = opts.url ?? cfg.browser.url;
+
+    if (url) await browser.navigate(url);
+    const { dataUrl } = await captureAndEncode({
+      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
+    });
+
+    // Step 1: locate the field
+    console.error(`Locating: "${opts.into}"`);
+    const locatePrompt = getLocatePrompt(opts.into);
+    const locateRaw = await provider.chat(locatePrompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
+
+    let locateResult: Record<string, unknown>;
+    try { locateResult = extractJson(locateRaw) as Record<string, unknown>; } catch { locateResult = {}; }
+
+    if (!locateResult.found) {
+      console.error(`Target field not found: ${locateResult.reasoning || "unknown reason"}`);
+      await browser.close();
+      process.exit(1);
+    }
+
+    // Step 2: click to focus
+    await browser.clickAt(locateResult.x as number, locateResult.y as number);
+    await browser.waitForTimeout(150);
+
+    // Step 3: clear + type
+    await browser.clearAndType(text);
+
+    console.log(JSON.stringify({
+      typed: text,
+      into: opts.into,
+      x: locateResult.x,
+      y: locateResult.y,
+      confidence: locateResult.confidence,
+    }, null, 2));
+    await browser.close();
+  });
+
+// ── hover ─────────────────────────────────────────────────
+
+program
+  .command("hover")
+  .description("Hover over an element by visual description")
+  .argument("<target>", "Visual description of the element (e.g. 'the first menu item')")
+  .option("--url <url>", "Target URL")
+  .option("--model <model>", "VLM model override")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .action(async (target, opts) => {
+    const cfg = getConfig();
+    const provider = getProvider(cfg.vlm.provider);
+    const url = opts.url ?? cfg.browser.url;
+
+    if (url) await browser.navigate(url);
+    const { dataUrl } = await captureAndEncode({
+      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
+    });
+
+    console.error(`Locating: "${target}"`);
+    const prompt = getLocatePrompt(target);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
+
+    let result: Record<string, unknown>;
+    try { result = extractJson(raw) as Record<string, unknown>; } catch { result = {}; }
+
+    if (!result.found) {
+      console.error(`Element not found: ${result.reasoning || "unknown reason"}`);
+      await browser.close();
+      process.exit(1);
+    }
+
+    await browser.hoverAt(result.x as number, result.y as number);
+    console.log(JSON.stringify({ hovered: target, x: result.x, y: result.y, confidence: result.confidence }, null, 2));
     await browser.close();
   });
 

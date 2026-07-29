@@ -139,3 +139,41 @@ class BrowserBackend(ABC):
     def close(self) -> None:
         """Clean up resources (close tabs, stop browser, etc.)."""
         ...
+
+    @abstractmethod
+    def click_at(self, x: float, y: float) -> None:
+        """Click at pixel coordinates on the page.
+
+        Args:
+            x: Horizontal pixel coordinate.
+            y: Vertical pixel coordinate.
+        """
+        ...
+
+    @abstractmethod
+    def type_text(self, text: str) -> None:
+        """Type text using the keyboard (assumes target field is focused).
+
+        Args:
+            text: The text to type.
+        """
+        ...
+
+    @abstractmethod
+    def clear_and_type(self, text: str) -> None:
+        """Clear the focused field and type new text.
+
+        Args:
+            text: The replacement text.
+        """
+        ...
+
+    @abstractmethod
+    def hover_at(self, x: float, y: float) -> None:
+        """Move the mouse to pixel coordinates (hover, no click).
+
+        Args:
+            x: Horizontal pixel coordinate.
+            y: Vertical pixel coordinate.
+        """
+        ...

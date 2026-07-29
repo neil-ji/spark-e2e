@@ -142,6 +142,37 @@ export class PlaywrightBrowser {
     await new Promise((r) => setTimeout(r, ms));
   }
 
+  // ── Visual interaction ───────────────────────────────
+
+  async clickAt(x: number, y: number): Promise<void> {
+    const page = await this.ensurePage();
+    log(`Click at (${Math.round(x)}, ${Math.round(y)})`);
+    await page.mouse.click(x, y);
+  }
+
+  async typeText(text: string): Promise<void> {
+    const page = await this.ensurePage();
+    log(`Type: "${text.slice(0, 40)}${text.length > 40 ? "..." : ""}"`);
+    await page.keyboard.type(text);
+  }
+
+  async clearAndType(text: string): Promise<void> {
+    // After clicking into a field, clear any existing content and type new text.
+    const page = await this.ensurePage();
+    // Select all existing text (works cross-platform: tries both shortcuts)
+    await page.keyboard.press("Meta+a");
+    await page.keyboard.press("Control+a");
+    // Replace with new text
+    await page.keyboard.type(text);
+    log(`Cleared field → typed: "${text.slice(0, 40)}${text.length > 40 ? "..." : ""}"`);
+  }
+
+  async hoverAt(x: number, y: number): Promise<void> {
+    const page = await this.ensurePage();
+    log(`Hover at (${Math.round(x)}, ${Math.round(y)})`);
+    await page.mouse.move(x, y);
+  }
+
   // ── Helpers ──────────────────────────────────────────
 
   toDataUrl(bytes: Buffer): string {

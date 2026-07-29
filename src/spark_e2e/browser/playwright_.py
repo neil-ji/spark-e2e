@@ -161,3 +161,28 @@ class PlaywrightBackend(BrowserBackend):
             self._browser.close()
         if hasattr(self, "_pw") and self._pw:
             self._pw.stop()
+
+    # ── Visual interaction ─────────────────────────────────────────
+
+    def click_at(self, x: float, y: float) -> None:
+        self._ensure_browser()
+        _log(f"Click at ({int(x)}, {int(y)})")
+        self._page.mouse.click(x, y)
+
+    def type_text(self, text: str) -> None:
+        self._ensure_browser()
+        _log(f'Type: "{text[:40]}{"..." if len(text) > 40 else ""}"')
+        self._page.keyboard.type(text)
+
+    def clear_and_type(self, text: str) -> None:
+        self._ensure_browser()
+        # Select all existing text and replace
+        self._page.keyboard.press("Meta+a")
+        self._page.keyboard.press("Control+a")
+        self._page.keyboard.type(text)
+        _log(f'Cleared field → typed: "{text[:40]}{"..." if len(text) > 40 else ""}"')
+
+    def hover_at(self, x: float, y: float) -> None:
+        self._ensure_browser()
+        _log(f"Hover at ({int(x)}, {int(y)})")
+        self._page.mouse.move(x, y)

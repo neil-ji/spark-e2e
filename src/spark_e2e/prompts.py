@@ -143,6 +143,35 @@ def get_baseline_compare_prompt(baseline_name: str) -> str:
     )
 
 
+# ── Element location (visual grounding) ────────────────────────────
+
+_LOCATE_RULES = (
+    "You are a visual element locator. Given a screenshot and a description, find the target element.\n"
+    "\n"
+    "RULES:\n"
+    "- Return the CENTER pixel coordinates (x, y) of the described element.\n"
+    "- Coordinates are relative to the FULL screenshot (top-left is 0, 0).\n"
+    "- If the element is not visible, set found=false and explain why.\n"
+    "- If there are multiple matches, pick the most prominent/likely one and note the ambiguity.\n"
+    "- For text fields (inputs, textareas): return coordinates of the input area center.\n"
+    "- For buttons: return coordinates of the button center (not its label text).\n"
+    "- For menu items / nav links: return the center of the clickable area.\n"
+    "- Round coordinates to integers.\n"
+    "- Be precise — the click will happen exactly at these coordinates.\n"
+)
+
+
+def get_locate_prompt(target: str) -> str:
+    """Return the prompt for element location (click/type/hover)."""
+    return (
+        _LOCATE_RULES
+        + f'\n\nFind this element: "{target}"'
+        + '\n\nRespond ONLY with JSON: {"found": true|false, "element": "...", '
+        + '"x": number, "y": number, '
+        + '"confidence": "high"|"medium"|"low", "reasoning": "..."}'
+    )
+
+
 def get_aesthetics_prompt(aesthetics: str) -> str:
     """Return the aesthetics prompt block, or empty string if no rules."""
     if not aesthetics.strip():
