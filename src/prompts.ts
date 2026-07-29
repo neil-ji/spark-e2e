@@ -39,18 +39,39 @@ function withCredentialSafety(prompt: string): string {
   return CREDENTIAL_SAFETY_RULES + "\n\n" + prompt;
 }
 
+// ── Review-specific prompt ───────────────────────────────
+
+const BASE_REVIEW_RULES = [
+  "You are a visual UI reviewer. Given a screenshot, identify visual issues.",
+  "",
+  "RULES:",
+  "- Report ONLY issues you can SEE. Each finding must cite visible evidence.",
+  "- Do NOT flag issues about dynamic data (timestamps, counters, usernames).",
+  "- Do NOT flag issues about font rendering differences (anti-aliasing, hinting).",
+  "- Prioritize STRUCTURAL issues: layout, alignment, sizing, overflow, truncation.",
+  "- For each issue, specify WHERE on the page it occurs (e.g. 'top-right card').",
+  "",
+  "Respond ONLY with JSON:",
+  '{"findings": [{"severity": "critical"|"major"|"minor", "category": "layout"|"typography"|"color"|"spacing"|"alignment"|"overflow"|"chart", "location": "...", "description": "...", "evidence": "...", "confidence": "high"|"medium"|"low"}], "summary": "N issues found", "no_issues_found": true|false}',
+].join("\n");
+
 // ── Assert-specific guardrails ──────────────────────────
 
 const BASE_ASSERT_RULES = [
-  "ANTI-HALLUCINATION RULES:",
-  "- Quote EXACT text/numbers you see on screen. Do not paraphrase or approximate.",
+  "You are a visual assertion checker. A user states what should be true about a page.",
+  "Your job: check the assertion against the screenshot and report pass/fail.",
+  "",
+  "RULES:",
+  "- Quote EXACT text you see. Do not paraphrase or approximate.",
   "- If the assertion mentions a specific value (e.g. '0.56s'), but the live value has",
   "  changed (e.g. shows '0.57s'), that is NOT a failure — dynamic data updates.",
-  "  Check the assertion about STRUCTURAL conditions (e.g. 'TTFB label is visible')",
-  "  not exact instantaneous values.",
+  "  Check STRUCTURAL conditions (e.g. 'TTFB label is visible'), not instantaneous values.",
   "- When confidence is medium or low, explain specifically what you're uncertain about.",
-  "- Only fail an assertion when there is CLEAR visual evidence contradicting it.",
+  "- Only fail when there is CLEAR visual evidence contradicting the assertion.",
   "  'I cannot tell for sure' should give pass=false with confidence=low, NOT pass=true.",
+  "",
+  "Respond ONLY with JSON:",
+  '{"pass": true|false, "confidence": "high"|"medium"|"low", "observation": "what you see on screen", "reasoning": "why pass or fail"}',
 ].join("\n");
 
 // ── Strictness variations ───────────────────────────────
@@ -68,7 +89,8 @@ const RELAXED_ADDENDUM = [
 // ── Public API ──────────────────────────────────────────
 
 export function getReviewPrompt(strictness = "standard"): string {
-  let prompt = BASE_HALLUCINATION_RULES;
+  let prompt = BASE_REVIEW_RULES;
+  prompt += "\n\n" + BASE_HALLUCINATION_RULES;
   if (strictness === "strict") prompt += "\n" + STRICT_ADDENDUM;
   else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
   return withCredentialSafety(prompt);
