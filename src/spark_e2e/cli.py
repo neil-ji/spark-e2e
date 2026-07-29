@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -282,6 +283,32 @@ def cmd_test(args: argparse.Namespace) -> None:
     backend.close()
 
 
+def _resolve_dom_ref(ref: str) -> dict | None:
+    """Resolve a @ref string from .spark-e2e/dom-state.json."""
+    import json
+
+    dom_state_path = os.path.join(os.getcwd(), ".spark-e2e", "dom-state.json")
+    if not os.path.isfile(dom_state_path):
+        print("No dom-state.json found. Run `spark-e2e dom-verify --save` first.")
+        return None
+    try:
+        with open(dom_state_path) as f:
+            state = json.load(f)
+        for el in state.get("layout", []):
+            if el.get("ref") == ref:
+                c = el["center"]
+                detail = f"{el.get('tag', '?')}"
+                if el.get("text"):
+                    detail += f' "{el["text"][:30]}"'
+                print(f"Resolved {ref} → ({c['x']}, {c['y']}) [{detail}]")
+                return {"x": c["x"], "y": c["y"]}
+        print(f'Ref "{ref}" not found in dom-state.json ({len(state.get("layout", []))} elements).')
+        return None
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Failed to parse dom-state.json: {e}")
+        return None
+
+
 def _locate_and_interact(args: argparse.Namespace, target: str) -> dict:
     """Shared helper: locate an element by visual description, return coordinates."""
     import json as _json
@@ -325,21 +352,57 @@ def _locate_and_interact(args: argparse.Namespace, target: str) -> dict:
 
 
 def cmd_click(args: argparse.Namespace) -> None:
-    """Click an element by visual description."""
+    """Click an element by visual description or @ref."""
     import json as _json
+
+    if args.target.startswith("@"):
+        coords = _resolve_dom_ref(args.target)
+        if not coords:
+            raise SystemExit(1)
+        from spark_e2e.config import load
+        from spark_e2e.browser import get_backend
+        cfg = load()
+        backend = get_backend(cfg.browser.backend)
+        url = args.url or cfg.browser.url
+        if url:
+            print(f"Navigating to {url} ...")
+            backend.navigate(url)
+        backend.click_at(float(coords["x"]), float(coords["y"]))
+        print(_json.dumps({"clicked": args.target, "x": coords["x"], "y": coords["y"], "via": "dom-ref"}, indent=2))
+        backend.close()
+        return
 
     ctx = _locate_and_interact(args, args.target)
     backend = ctx["backend"]
     result = ctx["result"]
 
     backend.click_at(float(result["x"]), float(result["y"]))
-    print(_json.dumps({"clicked": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence")}, indent=2))
+    print(_json.dumps({"clicked": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence"), "via": "vlm"}, indent=2))
     backend.close()
 
 
 def cmd_type(args: argparse.Namespace) -> None:
-    """Type text into a VLM-located field."""
+    """Type text into a VLM-located field or @ref."""
     import json as _json
+
+    if args.into.startswith("@"):
+        coords = _resolve_dom_ref(args.into)
+        if not coords:
+            raise SystemExit(1)
+        from spark_e2e.config import load
+        from spark_e2e.browser import get_backend
+        cfg = load()
+        backend = get_backend(cfg.browser.backend)
+        url = args.url or cfg.browser.url
+        if url:
+            print(f"Navigating to {url} ...")
+            backend.navigate(url)
+        backend.click_at(float(coords["x"]), float(coords["y"]))
+        backend.wait_for_timeout(150)
+        backend.clear_and_type(args.text)
+        print(_json.dumps({"typed": args.text, "into": args.into, "x": coords["x"], "y": coords["y"], "via": "dom-ref"}, indent=2))
+        backend.close()
+        return
 
     ctx = _locate_and_interact(args, args.into)
     backend = ctx["backend"]
@@ -358,20 +421,38 @@ def cmd_type(args: argparse.Namespace) -> None:
         "x": result["x"],
         "y": result["y"],
         "confidence": result.get("confidence"),
+        "via": "vlm",
     }, indent=2))
     backend.close()
 
 
 def cmd_hover(args: argparse.Namespace) -> None:
-    """Hover over an element by visual description."""
+    """Hover over an element by visual description or @ref."""
     import json as _json
+
+    if args.target.startswith("@"):
+        coords = _resolve_dom_ref(args.target)
+        if not coords:
+            raise SystemExit(1)
+        from spark_e2e.config import load
+        from spark_e2e.browser import get_backend
+        cfg = load()
+        backend = get_backend(cfg.browser.backend)
+        url = args.url or cfg.browser.url
+        if url:
+            print(f"Navigating to {url} ...")
+            backend.navigate(url)
+        backend.hover_at(float(coords["x"]), float(coords["y"]))
+        print(_json.dumps({"hovered": args.target, "x": coords["x"], "y": coords["y"], "via": "dom-ref"}, indent=2))
+        backend.close()
+        return
 
     ctx = _locate_and_interact(args, args.target)
     backend = ctx["backend"]
     result = ctx["result"]
 
     backend.hover_at(float(result["x"]), float(result["y"]))
-    print(_json.dumps({"hovered": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence")}, indent=2))
+    print(_json.dumps({"hovered": args.target, "x": result["x"], "y": result["y"], "confidence": result.get("confidence"), "via": "vlm"}, indent=2))
     backend.close()
 
 

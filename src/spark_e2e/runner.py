@@ -98,6 +98,22 @@ def _run_steps(
     return scenario_results
 
 
+def _resolve_dom_ref(ref: str) -> dict | None:
+    """Resolve a @ref from .spark-e2e/dom-state.json."""
+    dom_state = os.path.join(os.getcwd(), ".spark-e2e", "dom-state.json")
+    if not os.path.isfile(dom_state):
+        return None
+    try:
+        with open(dom_state) as f:
+            state = json.load(f)
+        for el in state.get("layout", []):
+            if el.get("ref") == ref:
+                return {"x": el["center"]["x"], "y": el["center"]["y"]}
+        return None
+    except Exception:
+        return None
+
+
 def _exec_step(
     step: dict,
     browser: Any,
@@ -148,7 +164,14 @@ def _exec_step(
 
     # ── click ──
     if "click" in step:
-        loc = _locate(step["click"])
+        click_target = step["click"]
+        if isinstance(click_target, str) and click_target.startswith("@"):
+            coords = _resolve_dom_ref(click_target)
+            if not coords:
+                return {"step": step, "pass": False, "type": "click", "detail": f"Dom ref not found: {click_target}"}
+            browser.click_at(float(coords["x"]), float(coords["y"]))
+            return {"step": step, "pass": True, "type": "click", "detail": f"{click_target} ({coords['x']}, {coords['y']}) [dom-ref]"}
+        loc = _locate(click_target)
         if not loc.get("found"):
             return {"step": step, "pass": False, "type": "click", "detail": f"Not found: {loc.get('reasoning', '?')}"}
         browser.click_at(float(loc["x"]), float(loc["y"]))
@@ -156,9 +179,17 @@ def _exec_step(
 
     # ── type ──
     if "type" in step:
-        target = step["type"]["into"]
+        into = step["type"]["into"]
         text = step["type"]["text"]
-        loc = _locate(target)
+        if isinstance(into, str) and into.startswith("@"):
+            coords = _resolve_dom_ref(into)
+            if not coords:
+                return {"step": step, "pass": False, "type": "type", "detail": f"Dom ref not found: {into}"}
+            browser.click_at(float(coords["x"]), float(coords["y"]))
+            browser.wait_for_timeout(150)
+            browser.clear_and_type(text)
+            return {"step": step, "pass": True, "type": "type", "detail": f'"{text}" into {into} [dom-ref]'}
+        loc = _locate(into)
         if not loc.get("found"):
             return {"step": step, "pass": False, "type": "type", "detail": f"Target not found: {loc.get('reasoning', '?')}"}
         browser.click_at(float(loc["x"]), float(loc["y"]))
@@ -168,7 +199,14 @@ def _exec_step(
 
     # ── hover ──
     if "hover" in step:
-        loc = _locate(step["hover"])
+        hover_target = step["hover"]
+        if isinstance(hover_target, str) and hover_target.startswith("@"):
+            coords = _resolve_dom_ref(hover_target)
+            if not coords:
+                return {"step": step, "pass": False, "type": "hover", "detail": f"Dom ref not found: {hover_target}"}
+            browser.hover_at(float(coords["x"]), float(coords["y"]))
+            return {"step": step, "pass": True, "type": "hover", "detail": f"{hover_target} ({coords['x']}, {coords['y']}) [dom-ref]"}
+        loc = _locate(hover_target)
         if not loc.get("found"):
             return {"step": step, "pass": False, "type": "hover", "detail": f"Not found: {loc.get('reasoning', '?')}"}
         browser.hover_at(float(loc["x"]), float(loc["y"]))
