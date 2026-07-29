@@ -241,7 +241,7 @@ async function runFile(yamlPath: string): Promise<RunReport> {
   const cfg = getConfig();
   const browser = new PlaywrightBrowser();
   const provider = getProvider(cfg.vlm.provider);
-  const baseUrl = suite.config?.url || cfg.browser.url;
+  const baseUrl = suite.config?.url || cfg.browser.url || "";
 
   // Apply viewport from YAML config if present
   if (suite.config?.viewport?.width && suite.config?.viewport?.height) {

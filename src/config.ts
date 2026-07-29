@@ -19,7 +19,7 @@ import { z } from "zod";
 
 const BrowserConfigSchema = z.object({
   // backend always Playwright — field kept for backward compat only
-  url: z.string().default("http://localhost:5173"),
+  url: z.string().optional(),
 });
 
 const ViewportConfigSchema = z.object({
@@ -76,7 +76,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 // ── Default config ─────────────────────────────────────
 
 const DEFAULT_CONFIG: Config = {
-  browser: { url: "http://localhost:5173" },
+  browser: {},
   viewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
   vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 4000 },
   selectors: {

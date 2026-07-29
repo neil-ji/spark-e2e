@@ -55,6 +55,21 @@ const PROVIDER_PRESETS: Record<string, { label: string; baseUrl: string; model: 
 
 // ── Auto-detection helpers ────────────────────────────────
 
+/** Check if spark-e2e is installed globally (npm install -g). */
+function isInstalledGlobally(): boolean {
+  try {
+    const npmRoot = execSync("npm root -g", { encoding: "utf-8", timeout: 5000 }).trim();
+    return existsSync(resolve(npmRoot, "spark-e2e"));
+  } catch {
+    return false;
+  }
+}
+
+/** Check if spark-e2e is installed in cwd's node_modules. */
+function isInstalledLocally(cwd: string): boolean {
+  return existsSync(resolve(cwd, "node_modules", "spark-e2e"));
+}
+
 function detectScreenSize(): { width: number; height: number } {
   try {
     if (process.platform === "darwin") {
@@ -114,7 +129,6 @@ export interface SetupAnswers {
   apiKey: string;
   baseUrl: string;
   model: string;
-  defaultUrl: string;
   viewportWidth: number;
   viewportHeight: number;
   thinkingBudget?: number;
@@ -127,9 +141,6 @@ export interface SetupAnswers {
 
 export function buildConfigFromAnswers(answers: SetupAnswers): Record<string, unknown> {
   return {
-    browser: {
-      url: answers.defaultUrl,
-    },
     viewport: {
       width: answers.viewportWidth,
       height: answers.viewportHeight,
@@ -355,16 +366,6 @@ export async function setupCommand(opts: {
     apiKey = key;
   }
 
-  // ── Section 2: Browser Configuration ──────────────────
-
-  const defaultUrl = opts.yes
-    ? "http://localhost:5173"
-    : ((await p.text({
-        message: "Default URL to test (optional, use --url to override)",
-        placeholder: "Leave empty to skip, e.g. http://localhost:5173",
-        defaultValue: "",
-      })) as string);
-
   // Auto-detect viewport from system screen size
   const viewport = detectScreenSize();
   if (!opts.yes) {
@@ -443,9 +444,6 @@ export async function setupCommand(opts: {
 
   const thinkingBudget = 4000;
   const config: Record<string, unknown> = {
-    browser: {
-      url: defaultUrl,
-    },
     viewport: {
       width: viewport.width,
       height: viewport.height,
@@ -529,17 +527,30 @@ export async function setupCommand(opts: {
   nl();
   p.outro("spark-e2e is ready!");
 
+  // Detect how spark-e2e is installed
+  const isGlobal = isInstalledGlobally();
+  const isLocal = isInstalledLocally(cwd);
+  const isNpx = !isGlobal && !isLocal;
+
   const boxWidth = 50;
   const line = "─".repeat(boxWidth);
+
+  if (isNpx) {
+    console.log(`  ${line}`);
+    console.log(`  ⚠️  You're running via npx (on-demand download).`);
+    console.log(`  For a faster experience, install globally:`);
+    console.log();
+    console.log(`    npm install -g spark-e2e`);
+    console.log();
+    console.log(`  After global install, just run:  spark-e2e <command>`);
+    console.log(`  ${line}`);
+  }
+
   console.log(`  ${line}`);
   console.log(`  Next steps:`);
   console.log();
   console.log(`    spark-e2e doctor                Verify your setup`);
-  if (defaultUrl) {
-    console.log(`    spark-e2e review --url ${defaultUrl}    Run first visual review`);
-  } else {
-    console.log(`    spark-e2e review --url <your-url>    Run first visual review`);
-  }
+  console.log(`    spark-e2e review --url <your-url>    Run first visual review`);
   console.log();
   if (installedSkills.length > 0) {
     console.log(`  Slash commands:`);

@@ -85,10 +85,12 @@ The three skills in `skills/` are Claude Code skills per the [official spec](htt
 
 | Channel | Command | What you get |
 |---|---|---|
-| npx | `npx spark-e2e` | Native TypeScript CLI (zero install) |
-| npm | `npm install -g spark-e2e` | Global TypeScript CLI |
+| npm (recommended) | `npm install -g spark-e2e` | Global CLI — fast, always available |
+| npx (fallback) | `npx spark-e2e` | On-demand download — slower, may hit cache issues |
 | Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 3 Claude Code skills |
 | Setup Wizard | `spark-e2e setup` | Interactive config + skill install |
+
+**Always prefer global install (`npm install -g`).** Local installs in project `node_modules` cause confusion — the npx resolver picks the local version (possibly stale) over the latest, and users must configure npm scripts to call it. The setup wizard detects npx usage and prompts users to install globally.
 
 The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skills` with `source: "./"` (relative path), pointing `skills: ["skills"]` to auto-discover all three skill directories.
 
