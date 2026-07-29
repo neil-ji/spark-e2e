@@ -2,20 +2,16 @@
 
 Commands:
     setup      Interactive configuration wizard (TS CLI only — run `spark-e2e setup`)
-    run        Run YAML test scenarios (tests/*.yaml)
-    navigate   Load a URL in the browser
+    doctor     Diagnose the environment
     snapshot   Capture a browser screenshot
-    inspect    Free-form VLM screenshot analysis
+    scroll     Scroll the page
     assert     Run a visual assertion (pass/fail)
-    click      Click an element by visual description (VLM-located)
-    type       Type text into a VLM-located field
-    hover      Hover over an element by visual description
-    compare    Compare page against expected state
+    click      Click an element by visual description or @ref
+    type       Type text into a VLM-located field or @ref
+    hover      Hover over an element by visual description or @ref
+    review     Comprehensive visual UI audit
     test       Natural language E2E test (navigate → review → assert in one call)
     baseline   Visual regression baselines (save, compare, list, delete)
-    review     Comprehensive visual UI audit
-    dom-verify Batch DOM structure + CSS discovery
-    doctor     Diagnose the environment
 """
 
 from __future__ import annotations
@@ -456,38 +452,6 @@ def cmd_hover(args: argparse.Namespace) -> None:
     backend.close()
 
 
-def cmd_run(args: argparse.Namespace) -> None:
-    """Run YAML test scenarios."""
-    import json as _json
-
-    from spark_e2e.runner import run_tests
-
-    reports = run_tests(args.file or None)
-
-    if not reports:
-        raise SystemExit(1)
-
-    total_scenarios = sum(len(r.get("scenarios", [])) for r in reports)
-    failed_scenarios = sum(
-        sum(1 for s in r.get("scenarios", []) if not s.get("pass", False))
-        for r in reports
-    )
-    total_duration = sum(r.get("durationMs", 0) for r in reports)
-
-    summary = {
-        "files": len(reports),
-        "passed": sum(1 for r in reports if r.get("pass", False)),
-        "failed": sum(1 for r in reports if not r.get("pass", False)),
-        "scenarios": total_scenarios,
-        "scenariosPassed": total_scenarios - failed_scenarios,
-        "scenariosFailed": failed_scenarios,
-        "durationMs": total_duration,
-    }
-
-    print(_json.dumps(summary, indent=2))
-    raise SystemExit(1 if summary["failed"] > 0 else 0)
-
-
 def cmd_baseline_save(args: argparse.Namespace) -> None:
     """Save current page as a named baseline."""
     import json as _json
@@ -624,11 +588,6 @@ def main() -> None:
     p_doctor = subparsers.add_parser("doctor", help="Diagnose environment")
     p_doctor.add_argument("--quick", action="store_true", help="Skip connectivity tests")
     p_doctor.set_defaults(func=cmd_doctor)
-
-    # run
-    p_run = subparsers.add_parser("run", help="Run YAML test scenarios (tests/*.yaml)")
-    p_run.add_argument("file", nargs="?", default=None, help="Specific test file or directory (default: tests/)")
-    p_run.set_defaults(func=cmd_run)
 
     # snapshot
     p_snap = subparsers.add_parser("snapshot", help="Capture a screenshot")
