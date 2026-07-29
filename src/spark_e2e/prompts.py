@@ -70,6 +70,44 @@ NO_HALLUCINATION = _BASE_HALLUCINATION_RULES
 NO_HALLUCINATION_ASSERT = _BASE_ASSERT_RULES
 
 
+# ── Test-specific guardrails ──────────────────────────────────────────
+
+_BASE_TEST_RULES = (
+    "You are a visual E2E test runner. A user has described what they expect to see on a page.\n"
+    "Your job: check EVERY expectation against the screenshot and report pass/fail for each.\n"
+    "\n"
+    "RULES:\n"
+    "- Each expectation is a separate check. Report pass/fail independently per expectation.\n"
+    "- Only report what you ACTUALLY SEE. If an element is not visible, say so — don't guess.\n"
+    "- For text content: quote EXACT text you see. If text is cut off, report the visible portion.\n"
+    "- Structural checks (layout, alignment, sizing, visibility) are more reliable than exact color/value checks.\n"
+    "- If a check is about dynamic data (numbers, timestamps, user names), be lenient —\n"
+    "  only fail if the STRUCTURE is broken (missing label, truncated text), not if the value changed.\n"
+    "- If you genuinely cannot determine pass/fail, set confidence to 'low' and explain why.\n"
+    "- Be specific in your reasoning: mention WHERE on the page you looked and WHAT you observed.\n"
+)
+
+
+def get_test_prompt(expectations: str, strictness: str = "standard") -> str:
+    """Return the prompt for the visual_test command."""
+    prompt = _BASE_TEST_RULES
+    prompt += "\n\nEXPECTATIONS TO VERIFY:\n" + expectations
+    prompt += "\n\n" + _BASE_HALLUCINATION_RULES
+    if strictness == "strict":
+        prompt += "\n" + _STRICT_ADDENDUM
+    elif strictness == "relaxed":
+        prompt += "\n" + _RELAXED_ADDENDUM
+    prompt += (
+        '\n\nRespond ONLY with JSON: {"pass": true|false, '
+        '"confidence": "high"|"medium"|"low", '
+        '"checks": [{"expectation": "...", "pass": true|false, '
+        '"confidence": "high"|"medium"|"low", '
+        '"observation": "...", "reasoning": "..."}], '
+        '"summary": "..."}'
+    )
+    return prompt
+
+
 def get_aesthetics_prompt(aesthetics: str) -> str:
     """Return the aesthetics prompt block, or empty string if no rules."""
     if not aesthetics.strip():

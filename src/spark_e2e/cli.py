@@ -7,6 +7,7 @@ Commands:
     inspect    Free-form VLM screenshot analysis
     assert     Run a visual assertion (pass/fail)
     compare    Compare page against expected state
+    test       Natural language E2E test (navigate → review → assert in one call)
     review     Comprehensive visual UI audit
     dom-verify Batch DOM structure + CSS discovery
     doctor     Diagnose the environment
@@ -235,6 +236,47 @@ def cmd_review(args: argparse.Namespace) -> None:
     backend.close()
 
 
+def cmd_test(args: argparse.Namespace) -> None:
+    """Run a natural language E2E test via CLI."""
+    import json as _json
+
+    from spark_e2e.vlm import get_provider
+    from spark_e2e.browser import get_backend
+    from spark_e2e.config import load
+
+    cfg = load()
+    backend = get_backend(cfg.browser.backend)
+    provider = get_provider(cfg.vlm.provider)
+
+    url = args.url or cfg.browser.url
+    print(f"Navigating to {url} ...")
+    backend.navigate(url)
+
+    viewport = None
+    if args.width and args.height:
+        viewport = {"width": args.width, "height": args.height, "deviceScaleFactor": 1}
+
+    png = backend.capture_screenshot(viewport=viewport, reload=args.reload, delay=args.delay)
+    data_url = backend.to_data_url(png)
+
+    expectations_text = args.expectations
+    print(f"Testing: {expectations_text[:80]}{'...' if len(expectations_text) > 80 else ''}")
+
+    from spark_e2e import prompts as prompts_mod
+    prompt = prompts_mod.get_test_prompt(expectations_text)
+
+    print("Asking VLM ...")
+    raw = provider.chat(prompt, data_url, args.model, cfg.vlm.thinking_budget)
+    try:
+        from spark_e2e.vlm.openai_compat import extract_json
+        result = extract_json(raw)
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    except Exception:
+        print(raw)
+
+    backend.close()
+
+
 # ── CLI definition ──────────────────────────────────────────────────
 
 
@@ -291,6 +333,17 @@ def main() -> None:
     p_review.add_argument("--reload", action="store_true", default=True, help="Reload before capture")
     p_review.add_argument("--delay", type=float, default=0.3, help="Delay after reload")
     p_review.set_defaults(func=cmd_review)
+
+    # test
+    p_test = subparsers.add_parser("test", help="Natural language E2E test (navigate → review → assert in one call)")
+    p_test.add_argument("expectations", help="What you expect to see (natural language)")
+    p_test.add_argument("--url", help="Target URL")
+    p_test.add_argument("--model", help="VLM model override")
+    p_test.add_argument("--width", type=int, help="Viewport width")
+    p_test.add_argument("--height", type=int, help="Viewport height")
+    p_test.add_argument("--reload", action="store_true", default=True, help="Reload before capture")
+    p_test.add_argument("--delay", type=float, default=0.3, help="Delay after reload")
+    p_test.set_defaults(func=cmd_test)
 
     args = parser.parse_args()
     if not args.command:

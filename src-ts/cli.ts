@@ -11,6 +11,7 @@
  *   inspect      Free-form VLM screenshot analysis
  *   assert       Run a visual assertion (pass/fail)
  *   compare      Compare page against expected state
+ *   test         Natural language E2E test (navigate → review → assert in one call)
  *   review       Comprehensive visual UI audit
  *   dom-verify   Batch DOM structure + CSS discovery
  *   doctor       Diagnose the environment
@@ -87,7 +88,7 @@ const browser = new PlaywrightBrowser();
 import { getConfig, load, findConfigFile, getAesthetics } from "./config.js";
 // browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
-import { getReviewPrompt, getAssertPrompt, getAestheticsPrompt } from "./prompts.js";
+import { getReviewPrompt, getAssertPrompt, getTestPrompt, getAestheticsPrompt } from "./prompts.js";
 
 const program = new Command();
 
@@ -310,6 +311,45 @@ program
     const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     try {
       console.log(JSON.stringify(extractJson(raw), null, 2));
+    } catch {
+      console.log(raw);
+    }
+    await browser.close();
+  });
+
+// ── test ─────────────────────────────────────────────────
+
+program
+  .command("test")
+  .description("Natural language E2E test — navigate, review, and assert in one call")
+  .argument("<expectations>", "What you expect to see (natural language, e.g. 'The sidebar has 5 menu items and Dashboard is highlighted')")
+  .option("--url <url>", "Target URL")
+  .option("--model <model>", "VLM model override")
+  .option("--width <px>", "Viewport width", parseInt)
+  .option("--height <px>", "Viewport height", parseInt)
+  .option("--no-reload", "Skip reload")
+  .option("--delay <s>", "Delay after reload", parseFloat, 0.3)
+  .action(async (expectations, opts) => {
+    const cfg = getConfig();
+    const url = opts.url ?? cfg.browser.url;
+
+    const provider = getProvider(cfg.vlm.provider);
+
+    if (url) { await browser.navigate(url); }
+    const { dataUrl } = await captureAndEncode({
+      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
+      reload: opts.reload,
+      delay: opts.delay,
+    });
+
+    console.error(`Testing: ${expectations.slice(0, 80)}${expectations.length > 80 ? "..." : ""}`);
+
+    const prompt = getTestPrompt(expectations, cfg.prompts.strictness);
+
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
+    try {
+      const result = extractJson(raw);
+      console.log(JSON.stringify(result, null, 2));
     } catch {
       console.log(raw);
     }

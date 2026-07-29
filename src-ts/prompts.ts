@@ -61,6 +61,33 @@ export function getAssertPrompt(strictness = "standard"): string {
   return prompt;
 }
 
+// ── Test-specific guardrails ──────────────────────────
+
+const BASE_TEST_RULES = [
+  "You are a visual E2E test runner. A user has described what they expect to see on a page.",
+  "Your job: check EVERY expectation against the screenshot and report pass/fail for each.",
+  "",
+  "RULES:",
+  "- Each expectation is a separate check. Report pass/fail independently per expectation.",
+  "- Only report what you ACTUALLY SEE. If an element is not visible, say so — don't guess.",
+  "- For text content: quote EXACT text you see. If text is cut off, report the visible portion.",
+  "- Structural checks (layout, alignment, sizing, visibility) are more reliable than exact color/value checks.",
+  "- If a check is about dynamic data (numbers, timestamps, user names), be lenient —",
+  "  only fail if the STRUCTURE is broken (missing label, truncated text), not if the value changed.",
+  "- If you genuinely cannot determine pass/fail, set confidence to 'low' and explain why.",
+  "- Be specific in your reasoning: mention WHERE on the page you looked and WHAT you observed.",
+].join("\n");
+
+export function getTestPrompt(expectations: string, strictness = "standard"): string {
+  let prompt = BASE_TEST_RULES;
+  prompt += "\n\nEXPECTATIONS TO VERIFY:\n" + expectations;
+  prompt += "\n\n" + BASE_HALLUCINATION_RULES;
+  if (strictness === "strict") prompt += "\n" + STRICT_ADDENDUM;
+  else if (strictness === "relaxed") prompt += "\n" + RELAXED_ADDENDUM;
+  prompt += "\n\nRespond ONLY with JSON: {\"pass\": true|false, \"confidence\": \"high\"|\"medium\"|\"low\", \"checks\": [{\"expectation\": \"...\", \"pass\": true|false, \"confidence\": \"high\"|\"medium\"|\"low\", \"observation\": \"...\", \"reasoning\": \"...\"}], \"summary\": \"...\"}";
+  return prompt;
+}
+
 export function getAestheticsPrompt(aesthetics: string): string {
   if (!aesthetics.trim()) return "";
   return [

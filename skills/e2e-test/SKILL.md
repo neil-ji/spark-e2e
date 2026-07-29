@@ -115,7 +115,14 @@ Compile findings into a structured report:
 
 ## Quick Examples
 
-**Minimal test (one page):**
+**One-liner (preferred):**
+```bash
+spark-e2e test "The sidebar has 5 menu items and Dashboard is highlighted" --url "$ARGUMENTS"
+```
+Combines navigate → screenshot → review → assert into a single browser session.
+Returns `{"pass": true|false, "checks": [...], "summary": "..."}`.
+
+**Minimal test (step by step):**
 ```bash
 spark-e2e navigate "$ARGUMENTS"
 spark-e2e review --focus comprehensive --url "$ARGUMENTS"

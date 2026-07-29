@@ -89,7 +89,15 @@ After confirming root cause via DOM:
 
 ### Phase 4 — Visual Assert
 
-After each fix, verify with narrow assertions:
+After each fix, verify with narrow assertions. Prefer `spark-e2e test` for one-shot verification:
+
+```bash
+# One-shot: natural language test assertion
+spark-e2e test "Two adjacent cards have equal height and bottom edges align" --url "$ARGUMENTS"
+
+# Or use explicit assert for more control:
+spark-e2e assert "Only the current page's menu item is highlighted in the sidebar" --url "$ARGUMENTS"
+```
 
 **Good assertions (narrow, data-independent):**
 ```bash
