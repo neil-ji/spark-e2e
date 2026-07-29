@@ -26,23 +26,24 @@ npx tsc --noEmit               # type-check
 
 ## Architecture
 
-```
+```text
 skills/                          ← Claude Code skills (Markdown)
-├── ui-review/SKILL.md           ← /ui-review — review loop
-├── dom-verify/SKILL.md          ← /dom-verify — DOM checks
-└── e2e-test/SKILL.md            ← /e2e-test — full test cycle
+├── spark-e2e/SKILL.md           ← /spark-e2e — all-in-one testing
+└── spark-e2e-init/SKILL.md      ← /spark-e2e-init — style conventions
 
 src/                          ← TypeScript CLI
-├── cli.ts                       ← Commander, 13 subcommands
+├── cli.ts                       ← Commander, 15 subcommands
 ├── config.ts                    ← js-yaml + dotenv + zod, 5-layer priority
-├── prompts.ts                   ← Anti-hallucination prompts, 3 strictness levels
+├── prompts.ts                   ← Anti-hallucination + credential safety prompts
 ├── baselines.ts                 ← Visual regression baseline CRUD
 ├── runner.ts                    ← YAML test scenario runner
+├── migrate.ts                   ← Versioned migration engine (spark-e2e update)
+├── setup.ts                     ← Interactive setup wizard
 ├── browser/
-│   ├── index.ts                 ← Registry pattern (registerBackend, getBackend)
+│   ├── index.ts                 ← Registry pattern
 │   └── playwright.ts            ← Playwright native
 └── vlm/
-    ├── index.ts                 ← Registry pattern (registerProvider, getProvider)
+    ├── index.ts                 ← Registry pattern
     └── openai-compat.ts         ← OpenAI SDK + extractJson()
 ```
 
@@ -67,17 +68,17 @@ src/                          ← TypeScript CLI
 
 `AESTHETICS.md` is a **generated** file that defines project-specific UI conventions (spacing, colors, typography, component specs). It is automatically injected into every `spark-e2e review` VLM prompt.
 
-Run `/style-init` to scan the frontend codebase and regenerate this file. Re-run whenever the design system changes. The conventions are concrete and quantifiable — real pixel values, hex colors, and font sizes extracted from the actual codebase.
+Run `/spark-e2e-init` to scan the frontend codebase and regenerate this file. Re-run whenever the design system changes. The conventions are concrete and quantifiable — real pixel values, hex colors, and font sizes extracted from the actual codebase.
 
 ### Skills as Slash Commands
 
-The three skills in `skills/` are Claude Code skills per the [official spec](https://code.claude.com/docs/en/skills). They describe CLI command workflows for Claude to execute via Bash.
+The two skills in `skills/` are Claude Code skills per the [official spec](https://code.claude.com/docs/en/skills). They describe CLI command workflows for Claude to execute via Bash.
 
 **Skill mechanics**:
 - **`description`** frontmatter — drives auto-invocation. Claude matches user queries against it at session start.
 - **`argument-hint`** — shown in UI when typing `/<name>`. `$ARGUMENTS` is the target URL.
-- **Invocation**: manual (`/ui-review`) or automatic when query matches description.
-- **Directory name** = slash command name (`skills/ui-review/SKILL.md` → `/ui-review`)
+- **Invocation**: manual (`/spark-e2e`) or automatic when query matches description.
+- **Directory name** = slash command name (`skills/spark-e2e/SKILL.md` → `/spark-e2e`)
 
 **CLI-first pattern**: Skills describe `spark-e2e` CLI commands for Claude to run via Bash. Each command is self-contained (navigate → screenshot → VLM → JSON output). Claude reads the JSON output and decides next steps.
 
@@ -87,17 +88,17 @@ The three skills in `skills/` are Claude Code skills per the [official spec](htt
 |---|---|---|
 | npm (recommended) | `npm install -g spark-e2e` | Global CLI — fast, always available |
 | npx (fallback) | `npx spark-e2e` | On-demand download — slower, may hit cache issues |
-| Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 3 Claude Code skills |
+| Plugin Marketplace | `/plugin marketplace add neilji/spark-e2e` | 2 Claude Code skills |
 | Setup Wizard | `spark-e2e setup` | Interactive config + skill install |
 
 **Always prefer global install (`npm install -g`).** Local installs in project `node_modules` cause confusion — the npx resolver picks the local version (possibly stale) over the latest, and users must configure npm scripts to call it. The setup wizard detects npx usage and prompts users to install globally.
 
-The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skills` with `source: "./"` (relative path), pointing `skills: ["skills"]` to auto-discover all three skill directories.
+The plugin marketplace (`.claude-plugin/marketplace.json`) lists `spark-e2e-skills` with `source: "./"` (relative path), pointing `skills: ["skills"]` to auto-discover all skill directories.
 
 ### Testing
 
 ```bash
-npm test                       # vitest, 62 tests across 7 files
+npm test                       # vitest, 88 tests across 8 files
 npx tsc --noEmit               # type-check
 ```
 

@@ -147,11 +147,9 @@ See `spark-e2e update` to migrate local data from older versions.
 ## Architecture
 
 ```
-skills/                    ← Claude Code slash commands
-├── ui-review/SKILL.md     ← /ui-review
-├── dom-verify/SKILL.md    ← /dom-verify
-├── e2e-test/SKILL.md      ← /e2e-test
-└── style-init/SKILL.md    ← /style-init
+skills/                       ← Claude Code slash commands
+├── spark-e2e/SKILL.md          ← /spark-e2e — all-in-one testing
+└── spark-e2e-init/SKILL.md     ← /spark-e2e-init — style conventions
 
 src/                       ← TypeScript CLI
 ├── cli.ts                 ← Commander, 15 subcommands
@@ -169,14 +167,12 @@ src/                       ← TypeScript CLI
 
 ## Skills as Slash Commands
 
-spark-e2e ships 4 Claude Code skills:
+spark-e2e ships 2 Claude Code skills:
 
 | Skill | Trigger |
 |---|---|
-| `/ui-review` | Visual UI review → findings → DOM verify → fix |
-| `/dom-verify` | Batch DOM structure + CSS token verification |
-| `/e2e-test` | Full-cycle visual E2E testing |
-| `/style-init` | Scan frontend codebase → generate style conventions |
+| `/spark-e2e` | Visual UI review, E2E testing, DOM verification |
+| `/spark-e2e-init` | Scan frontend codebase → generate style conventions |
 
 Install via `spark-e2e setup` or the Plugin Marketplace.
 

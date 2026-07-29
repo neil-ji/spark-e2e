@@ -4,20 +4,20 @@
     "name": "Neil Ji",
     "email": "neilji@users.noreply.github.com"
   },
-  "description": "VLM-powered visual E2E testing skills for Claude Code — UI review, DOM verification, and automated visual regression testing",
+  "description": "VLM-powered visual E2E testing skills for Claude Code — UI review, E2E automation, style conventions",
   "plugins": [
     {
       "name": "spark-e2e-skills",
       "source": "./",
-      "description": "Three visual E2E testing skills: ui-review (screenshot → review → DOM verify → fix → assert loop), dom-verify (batch DOM checks in 2 calls), e2e-test (full 6-phase automation cycle)",
-      "version": "0.1.0",
+      "description": "Two skills: spark-e2e (visual testing + E2E + DOM verification) and spark-e2e-init (style conventions generator)",
+      "version": "0.2.0",
       "author": {
         "name": "Neil Ji"
       },
       "homepage": "https://github.com/neilji/spark-e2e",
       "repository": "https://github.com/neilji/spark-e2e",
       "license": "MIT",
-      "keywords": ["e2e", "testing", "visual", "vlm", "browser", "ui-review", "dom-verify"],
+      "keywords": ["e2e", "testing", "visual", "vlm", "browser", "spark-e2e", "spark-e2e-init"],
       "skills": ["skills"],
       "strict": false
     }
