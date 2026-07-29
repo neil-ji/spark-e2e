@@ -1,6 +1,7 @@
 /**
  * Playwright browser backend — the one and only.
  */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Viewport, PageInfo, ElementRect, ScrollOptions } from "./index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,8 +14,15 @@ function log(msg: string): void {
 export class PlaywrightBrowser {
   private pw: PlaywrightAny = null;
   private browser: PlaywrightAny = null;
+  private context: PlaywrightAny = null;
   private page: PlaywrightAny = null;
   private module: PlaywrightAny = null;
+  private storageStatePath: string | null = null;
+
+  /** Set the path for persistent browser session storage (cookies, localStorage). */
+  setStorageStatePath(path: string): void {
+    this.storageStatePath = path;
+  }
 
   // ── Lifecycle ────────────────────────────────────────
 
@@ -22,17 +30,37 @@ export class PlaywrightBrowser {
     if (this.page) return this.page;
 
     this.module = await this.resolvePlaywright();
+    // ESM bundles (Playwright 1.60+) wrap exports in .default
+    const pw = this.module.default ?? this.module;
     log("Starting Chromium (headless)");
-    this.browser = await this.module.chromium.launch({ headless: true });
-    this.page = await this.browser.newPage();
+
+    // Load persisted session if available
+    const storageState = this.storageStatePath && existsSync(this.storageStatePath)
+      ? JSON.parse(readFileSync(this.storageStatePath, "utf-8"))
+      : undefined;
+
+    this.browser = await pw.chromium.launch({ headless: true });
+    this.context = await this.browser.newContext(
+      storageState ? { storageState } : {}
+    );
+    this.page = await this.context.newPage();
     return this.page;
   }
 
   async close(): Promise<void> {
+    // Save session state before closing
+    if (this.context && this.storageStatePath) {
+      try {
+        const state = await this.context.storageState();
+        writeFileSync(this.storageStatePath, JSON.stringify(state), "utf-8");
+      } catch { /* best effort */ }
+    }
     try { if (this.page) await this.page.close(); } catch {}
+    try { if (this.context) await this.context.close(); } catch {}
     try { if (this.browser) await this.browser.close(); } catch {}
     try { if (this.pw) await this.pw.stop?.(); } catch {}
     this.page = null;
+    this.context = null;
     this.browser = null;
     this.module = null;
   }

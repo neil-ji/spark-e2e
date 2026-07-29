@@ -99,6 +99,15 @@ import { runTests } from "./runner.js";
 
 const program = new Command();
 
+// Global option: persist browser session across commands
+program.option("--storage-state <path>", "Persist cookies and localStorage to/from a JSON file");
+program.hook("preAction", (thisCmd) => {
+  const opts = thisCmd.opts();
+  if (opts.storageState) {
+    browser.setStorageStatePath(resolve(opts.storageState));
+  }
+});
+
 // ── Helpers ─────────────────────────────────────────────
 
 async function captureAndEncode(opts?: {
@@ -396,8 +405,9 @@ function resolveDomRef(ref: string): { x: number; y: number } | null {
 
 program
   .command("click")
-  .description("Click an element by visual description or @ref (e.g. 'the Submit button' or '@button-1')")
-  .argument("<target>", "Visual description or @ref of the element")
+  .description("Click an element by CSS selector, visual description, or @ref")
+  .argument("<target>", "CSS selector, visual description, or @ref of the element")
+  .option("--selector", "Treat <target> as a CSS selector (no VLM)")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
@@ -406,6 +416,15 @@ program
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
     if (url) await browser.navigate(url);
+
+    // --selector: direct DOM targeting, no VLM
+    if (opts.selector) {
+      const page = await browser.ensurePage();
+      await page.locator(target).click();
+      console.log(JSON.stringify({ clicked: target, via: "selector" }, null, 2));
+      await browser.close();
+      return;
+    }
 
     // @ref shortcut: use saved DOM state, no VLM needed
     if (target.startsWith("@")) {
@@ -446,9 +465,10 @@ program
 
 program
   .command("type")
-  .description("Type text into a field located by visual description or @ref")
+  .description("Type text into a field by CSS selector, visual description, or @ref")
   .argument("<text>", "Text to type")
-  .requiredOption("--into <target>", "Visual description or @ref of the target field")
+  .requiredOption("--into <target>", "CSS selector, visual description, or @ref of the target field")
+  .option("--selector", "Treat --into as a CSS selector (no VLM)")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
@@ -457,6 +477,17 @@ program
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
     if (url) await browser.navigate(url);
+
+    // --selector: direct DOM targeting, no VLM
+    if (opts.selector) {
+      const page = await browser.ensurePage();
+      await page.locator(opts.into).click();
+      await browser.waitForTimeout(150);
+      await page.locator(opts.into).fill(text);
+      console.log(JSON.stringify({ typed: text, into: opts.into, via: "selector" }, null, 2));
+      await browser.close();
+      return;
+    }
 
     // @ref shortcut
     if (opts.into.startsWith("@")) {
@@ -511,8 +542,9 @@ program
 
 program
   .command("hover")
-  .description("Hover over an element by visual description or @ref")
-  .argument("<target>", "Visual description or @ref of the element")
+  .description("Hover over an element by CSS selector, visual description, or @ref")
+  .argument("<target>", "CSS selector, visual description, or @ref of the element")
+  .option("--selector", "Treat <target> as a CSS selector (no VLM)")
   .option("--url <url>", "Target URL")
   .option("--model <model>", "VLM model override")
   .option("--width <px>", "Viewport width", parseInt)
@@ -521,6 +553,15 @@ program
     const cfg = getConfig();
     const url = opts.url ?? cfg.browser.url;
     if (url) await browser.navigate(url);
+
+    // --selector: direct DOM targeting, no VLM
+    if (opts.selector) {
+      const page = await browser.ensurePage();
+      await page.locator(target).hover();
+      console.log(JSON.stringify({ hovered: target, via: "selector" }, null, 2));
+      await browser.close();
+      return;
+    }
 
     // @ref shortcut
     if (target.startsWith("@")) {
@@ -922,7 +963,45 @@ program
     console.log();
     if (!opts.quick) {
       console.log("─ VLM ─");
-      console.log(cfg.vlm.apiKey ? "✓ API key set" : "⚠ Set SPARK_E2E_API_KEY to enable VLM");
+      if (!cfg.vlm.apiKey) {
+        console.log("  ⚠ Set SPARK_E2E_API_KEY to enable VLM");
+      } else {
+        console.log(`  ✓ API key: ***`);
+        console.log(`  Provider: ${cfg.vlm.provider}`);
+        console.log(`  Base URL: ${cfg.vlm.baseUrl || "(default)"}`);
+        console.log(`  Model: ${cfg.vlm.model}`);
+
+        // Connectivity check
+        try {
+          const baseUrl = cfg.vlm.baseUrl || "https://api.openai.com/v1";
+          const modelsUrl = baseUrl.replace(/\/+$/, "") + "/models";
+          const res = await fetch(modelsUrl, {
+            headers: { Authorization: `Bearer ${cfg.vlm.apiKey}` },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (res.ok) {
+            const data = await res.json() as { data?: { id: string }[] };
+            const modelIds = (data.data ?? []).map((m: { id: string }) => m.id);
+            if (modelIds.length > 0) {
+              const found = modelIds.some((id: string) =>
+                id === cfg.vlm.model || id.includes(cfg.vlm.model) || cfg.vlm.model.includes(id)
+              );
+              if (found) {
+                console.log(`  ✓ Model "${cfg.vlm.model}" found (${modelIds.length} models available)`);
+              } else {
+                console.log(`  ⚠  Model "${cfg.vlm.model}" NOT in available models`);
+                console.log(`     Did you mean: ${modelIds.filter((id: string) => id.includes(cfg.vlm.model.split("-")[0])).slice(0, 3).join(", ") || modelIds.slice(0, 3).join(", ")}?`);
+              }
+            } else {
+              console.log(`  ✓ Endpoint reachable`);
+            }
+          } else {
+            console.log(`  ⚠  Endpoint returned ${res.status} — check URL and API key`);
+          }
+        } catch (e) {
+          console.log(`  ⚠  Cannot reach ${cfg.vlm.baseUrl || "endpoint"} — ${(e as Error).message}`);
+        }
+      }
     }
     console.log();
     console.log("Done.");
