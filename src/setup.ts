@@ -1,7 +1,7 @@
 /**
  * Interactive setup wizard for spark-e2e.
  *
- * Guides users through VLM config and browser config — minimal prompts,
+ * Guides users through VLM config — minimal prompts,
  * sensible defaults, auto-detection for everything else.
  */
 import * as p from "@clack/prompts";
@@ -114,15 +114,6 @@ function detectAgents(cwd: string): string[] {
   return detected;
 }
 
-function hasPlaywright(): boolean {
-  try {
-    execSync("npx playwright --version", { stdio: "pipe", timeout: 10000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ── Pure logic (testable without TTY) ─────────────────────
 
 export interface SetupAnswers {
@@ -136,7 +127,6 @@ export interface SetupAnswers {
   aestheticsFile?: string;
   agent?: string;
   scope?: string;
-  installPlaywright?: boolean;
 }
 
 export function buildConfigFromAnswers(answers: SetupAnswers): Record<string, unknown> {
@@ -372,19 +362,7 @@ export async function setupCommand(opts: {
     p.log.info(`Viewport auto-detected: ${viewport.width}×${viewport.height}`);
   }
 
-  // ── Section 3: Auto-setup (Playwright + Skills) ───────
-
-  let installPw = false;
-  if (!opts.yes) {
-    if (hasPlaywright()) {
-      p.log.info("Playwright already installed ✓");
-    } else {
-      installPw = (await p.confirm({
-        message: "Install Playwright globally?",
-        initialValue: true,
-      })) as boolean;
-    }
-  }
+  // ── Section 3: Skills ──────────────────────────────────
 
   // Auto-detect agent for skill installation
   const detectedAgents = detectAgents(targetDir);
@@ -489,23 +467,6 @@ export async function setupCommand(opts: {
   s.stop(`Configuration saved:
   ${fmtPath(yamlPath)}
   ${fmtPath(globalEnvPath)}`);
-
-  // ── Install Playwright ────────────────────────────────────
-  if (installPw) {
-    s.start("Installing Playwright globally...");
-    try {
-      const npm = process.env.npm_execpath ?? "npm";
-      execSync(`${npm} install -g playwright`, { stdio: "pipe", timeout: 120000 });
-      s.message("Downloading Chromium...");
-      execSync(`npx playwright install chromium`, { stdio: "pipe", timeout: 120000 });
-      s.stop("Playwright installed ✓");
-    } catch (e) {
-      s.stop(`Playwright install failed: ${(e as Error).message}`);
-      p.log.warn(
-        "You can install manually: npm install -g playwright && npx playwright install chromium"
-      );
-    }
-  }
 
   // ── Install skills ───────────────────────────────────────
   let installedSkills: string[] = [];

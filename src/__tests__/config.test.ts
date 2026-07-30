@@ -46,15 +46,11 @@ describe("CLI AGENTS", () => {
 // ── Tier 1.1: Security config schema ───────────────────────
 
 describe("security config", () => {
-  it("schema default maskSelectors include password, secret, token fields", () => {
+  it("schema default maskSelectors is empty (browser masking removed)", () => {
     const result = ConfigSchema.safeParse({});
     expect(result.success).toBe(true);
     if (result.success) {
-      const sels = result.data.security.maskSelectors;
-      expect(sels.length).toBeGreaterThan(0);
-      expect(sels.some((s: string) => s.includes("password"))).toBe(true);
-      expect(sels.some((s: string) => s.includes("secret"))).toBe(true);
-      expect(sels.some((s: string) => s.includes("token"))).toBe(true);
+      expect(result.data.security.maskSelectors).toHaveLength(0);
     }
   });
 

@@ -3,8 +3,10 @@ description: Scan frontend UI code to generate a style conventions file used by 
 argument-hint: "[project root directory]"
 ---
 
-Generate or update `AESTHETICS.md` by scanning the frontend codebase for UI conventions.
-This file is automatically injected into every `spark-e2e review` VLM prompt.
+Generate or update `AESTHETICS.md` and `.spark/plugin/e2e/dom-rules.json` by scanning the frontend codebase for UI conventions.
+`AESTHETICS.md` is injected into every `spark-e2e review` VLM prompt.
+`dom-rules.json` is consumed by `spark-e2e dom-lint` for deterministic rule checking.
+Both files share the same source of truth — a single scan produces both.
 
 ## Size Limits (HARD)
 
@@ -147,6 +149,45 @@ Write `AESTHETICS.md` at the project root using this exact template. **Enforce s
    e. Remove the Caption line from Typography.
    f. ONLY if still over limits: drop component sections one at a time (least impactful first).
 4. Write the trimmed content to `AESTHETICS.md`.
+
+### Phase 3b — Generate dom-rules.json
+
+From the SAME scan data used for AESTHETICS.md, generate a machine-readable rules file at `.spark/plugin/e2e/dom-rules.json`. This file is consumed by `spark-e2e dom-lint` for deterministic checks — no VLM needed.
+
+```json
+{
+  "version": "1",
+  "generatedAt": "<ISO timestamp>",
+  "tokens": {
+    "colors": {
+      "primary": { "value": "#F0824C", "var": "--spark-primary" },
+      "text": { "value": "#1A1A1A", "var": "--spark-text" }
+    },
+    "spacing": ["--space-1", "--space-2", "--space-3", "--space-4", "--space-5", "--space-6", "--space-7", "--space-8"],
+    "fontSizes": ["--text-xs", "--text-sm", "--text-base", "--text-lg", "--text-xl", "--text-2xl"]
+  },
+  "rules": {
+    "typography": [
+      { "selector": ".spark-button", "fontWeight": "500", "fontSize": "14px" },
+      { "selector": ".spark-table__th", "fontWeight": "600" }
+    ],
+    "components": {
+      "button": { "fontWeight": "500", "borderRadius": "8px" },
+      "card": { "borderRadius": "12px", "padding": "var(--space-5)" }
+    }
+  }
+}
+```
+
+**Mapping rules:**
+
+- **tokens.colors**: From Color Palette scan. key = semantic role name, value = {value: hex, var: css variable name}. Include only colors with clear semantic roles (max 12).
+- **tokens.spacing**: From Spacing System scan. List all spacing token variable names (e.g. `--space-1` through `--space-8`).
+- **tokens.fontSizes**: From Typography Scale scan. List all font-size token variable names.
+- **rules.typography**: From Component Specs scan. For each component type with consistent typography: selector (CSS class), fontWeight, fontSize (if consistent).
+- **rules.components**: From Component Specs scan. For each component: key properties (fontWeight, borderRadius, padding). Only include components with ≥3 instances.
+
+**Write**: `.spark/plugin/e2e/dom-rules.json` (create directory if needed).
 
 ### Phase 4 — Verify
 

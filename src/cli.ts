@@ -1,31 +1,28 @@
 #!/usr/bin/env node
 /**
- * spark-e2e CLI — VLM-powered visual E2E testing.
+ * spark-e2e CLI — VLM + DOM dual-engine visual audit.
  *
- * Run it directly — no MCP server needed.
+ * Does NOT control the browser. Playwright CLI / MCP handles that.
+ * spark-e2e reviews screenshots and DOM dumps — PNG + JSON in, Findings out.
  *
  * Commands:
  *   setup        Interactive configuration wizard
- *   run          Run YAML test scenarios (tests/*.yaml)
- *   navigate     Load a URL in the browser
- *   snapshot     Capture a browser screenshot
+ *   review       Comprehensive visual UI audit (VLM-powered)
+ *   assert       Single-condition visual pass/fail check
  *   inspect      Free-form VLM screenshot analysis
- *   assert       Run a visual assertion (pass/fail)
- *   compare      Compare page against expected state
- *   click        Click an element by visual description (VLM-located)
- *   type         Type text into a VLM-located field
- *   hover        Hover over an element by visual description
- *   test         Natural language E2E test (navigate → review → assert in one call)
+ *   test         Multi-expectation visual verification
  *   baseline     Visual regression baselines (save, compare, list, delete)
- *   review       Comprehensive visual UI audit
- *   dom-verify   Batch DOM structure + CSS discovery
+ *   dom-lint     Deterministic DOM rule checks (token compliance, a11y)
+ *   dom-get      Element property lookup by @ref
  *   doctor       Diagnose the environment
+ *   update       Migrate config and data from older versions
  */
 import { Command } from "commander";
-import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, cpSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Agent definitions ───────────────────────────────────
@@ -33,254 +30,132 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 interface Agent {
   name: string;
   label: string;
-  /** Project-level skills directory (relative to project root) */
   projectDir: string;
-  /** User-level skills directory (relative to $HOME) */
   userDir: string;
-  /** Directories that indicate this agent is in use */
   detectDirs: string[];
-  /** If true, always resolve under $HOME regardless of --scope */
   homeDirOnly?: boolean;
 }
 
 export const AGENTS: Agent[] = [
-  {
-    name: "claude",
-    label: "Claude Code",
-    projectDir: ".claude/skills",
-    userDir: ".claude/skills",
-    detectDirs: [".claude"],
-  },
-  {
-    name: "codex",
-    label: "OpenAI Codex",
-    projectDir: ".agents/skills",
-    userDir: ".agents/skills",
-    detectDirs: [".agents", ".codex"],
-  },
-  {
-    name: "qoder",
-    label: "Qoder",
-    projectDir: ".qoder/skills",
-    userDir: ".qoder/skills",
-    detectDirs: [".qoder"],
-  },
-  {
-    name: "trae",
-    label: "Trae",
-    projectDir: ".trae/skills",
-    userDir: ".trae/skills",
-    detectDirs: [".trae", ".traecli"],
-  },
-  {
-    name: "spark-hub",
-    label: "Spark Hub",
-    projectDir: ".spark/skills",
-    userDir: ".spark/config/custom-skills",
-    detectDirs: [".spark"],
-  },
+  { name: "claude", label: "Claude Code", projectDir: ".claude/skills", userDir: ".claude/skills", detectDirs: [".claude"] },
+  { name: "codex", label: "OpenAI Codex", projectDir: ".agents/skills", userDir: ".agents/skills", detectDirs: [".agents", ".codex"] },
+  { name: "qoder", label: "Qoder", projectDir: ".qoder/skills", userDir: ".qoder/skills", detectDirs: [".qoder"] },
+  { name: "trae", label: "Trae", projectDir: ".trae/skills", userDir: ".trae/skills", detectDirs: [".trae", ".traecli"] },
+  { name: "spark-hub", label: "Spark Hub", projectDir: ".spark/skills", userDir: ".spark/config/custom-skills", detectDirs: [".spark"] },
 ];
-import { spawnSync } from "node:child_process";
 
-// Providers and browser
+// ── VLM provider ────────────────────────────────────────
+
 import { registerProvider } from "./vlm/index.js";
 import { OpenAICompatProvider, extractJson } from "./vlm/openai-compat.js";
-import { PlaywrightBrowser } from "./browser/index.js";
 registerProvider("openai-compat", OpenAICompatProvider);
 
-const browser = new PlaywrightBrowser();
+// ── Config & engine ─────────────────────────────────────
 
 import { getConfig, load, findConfigFile, getAesthetics, loadAesthetics } from "./config.js";
-// browser singleton imported above as `browser`
 import { getProvider } from "./vlm/index.js";
-import { getReviewPrompt, getAssertPrompt, getTestPrompt, getBaselineComparePrompt, getLocatePrompt, getAestheticsPrompt } from "./prompts.js";
+import { review as engineReview, domLint, domGet } from "./engine/index.js";
+import {
+  buildLightReviewPrompt,
+  buildAssertPrompt,
+  buildBaselineComparePrompt,
+} from "./engine/prompts/index.js";
 import { saveBaseline, loadBaseline, listBaselines, deleteBaseline, readBaselineScreenshot } from "./baselines.js";
-import { runTests } from "./runner.js";
 
 const program = new Command();
-
-// Global option: persist browser session across commands
-program.option("--storage-state <path>", "Persist cookies and localStorage to/from a JSON file");
-program.hook("preAction", (thisCmd) => {
-  const opts = thisCmd.opts();
-  if (opts.storageState) {
-    browser.setStorageStatePath(resolve(opts.storageState));
-  }
-});
-
-// ── Helpers ─────────────────────────────────────────────
-
-async function captureAndEncode(opts?: {
-  viewport?: { width: number; height: number; deviceScaleFactor?: number };
-  reload?: boolean;
-  delay?: number;
-  format?: "png" | "jpeg";
-  quality?: number;
-}): Promise<{ dataUrl: string; buf: Buffer }> {
-  const cfg = getConfig();
-  const raw = await browser.captureScreenshot({
-    ...opts,
-    maskSelectors: cfg.security.maskSelectors,
-  });
-  const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
-  return { dataUrl: browser.toDataUrl(buf), buf };
-}
 
 // ── setup ─────────────────────────────────────────────────
 
 program
   .command("setup")
-  .description("Interactive setup wizard — configure VLM, browser, and install skills")
+  .description("Interactive setup wizard — configure VLM and install skills")
   .option("--dir <path>", "Project directory (default: current directory)")
   .option("--yes", "Skip prompts, use defaults for everything")
   .option("--api-key <key>", "VLM API key (⚠️ WARNING: may leak to shell history. Use '-' to read from stdin, or omit for interactive hidden input)")
   .option("--base-url <url>", "VLM base URL (for --yes mode)")
   .action(async (opts) => {
-    const cfg = getConfig();
-
-    // Handle --api-key - (read from stdin pipe)
     let apiKey = opts.apiKey;
     if (apiKey === "-") {
       const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
+      for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       apiKey = Buffer.concat(chunks).toString("utf-8").trim();
     }
-
     const { setupCommand } = await import("./setup.js");
     await setupCommand({ dir: opts.dir, yes: opts.yes, apiKey, baseUrl: opts.baseUrl });
   });
 
-// ── run ───────────────────────────────────────────────────
+// ── review ───────────────────────────────────────────────
 
 program
-  .command("run")
-  .description("Run YAML test scenarios (default: tests/*.yaml)")
-  .argument("[file]", "Specific test file or directory (default: tests/)")
-  .option("--storage-state <path>", "Persist browser session (cookies, localStorage) across invocations")
-  .option("--model <model>", "VLM model override for all scenarios in this run")
-  .action(async (file, opts) => {
-    const reports = await runTests(file || undefined, {
-      storageStatePath: opts.storageState,
+  .command("review")
+  .description("Comprehensive visual UI audit — PNG in, findings out")
+  .requiredOption("--screenshot <path>", "Path to PNG screenshot")
+  .option("--dom <path>", "Path to DOM dump JSON for cross-validation")
+  .option("--focus <focus>", "comprehensive|layout|typography|color|spacing|charts|interactive", "comprehensive")
+  .option("--mode <mode>", "light (single pass) | strict (per-dimension parallel)", "light")
+  .option("--model <model>", "VLM model override")
+  .option("--output, -o <path>", "Save report to file")
+  .action(async (opts) => {
+    const cfg = getConfig();
+    const provider = getProvider(cfg.vlm.provider);
+    const aesthetics = getAesthetics();
+
+    const screenshotBuf = readFileSync(resolve(opts.screenshot));
+    const domDump = opts.dom ? JSON.parse(readFileSync(resolve(opts.dom), "utf-8")) : undefined;
+
+    console.error(`Reviewing screenshot (focus=${opts.focus}, mode=${opts.mode}) ...`);
+
+    const result = await engineReview(provider, {
+      screenshot: screenshotBuf,
+      dom: domDump,
+      aesthetics,
+      focus: opts.focus,
+      mode: opts.mode,
       model: opts.model,
+      thinkingBudget: cfg.vlm.thinkingBudget,
     });
 
-    if (reports.length === 0) process.exit(1);
-
-    // Print summary
-    const totalScenarios = reports.reduce((sum, r) => sum + r.scenarios.length, 0);
-    const failedScenarios = reports.reduce((sum, r) => sum + r.scenarios.filter(s => !s.pass).length, 0);
-    const totalDuration = reports.reduce((sum, r) => sum + r.durationMs, 0);
-
-    const summary = {
-      files: reports.length,
-      passed: reports.filter(r => r.pass).length,
-      failed: reports.filter(r => !r.pass).length,
-      scenarios: totalScenarios,
-      scenariosPassed: totalScenarios - failedScenarios,
-      scenariosFailed: failedScenarios,
-      durationMs: totalDuration,
-    };
-
-    console.log(JSON.stringify(summary, null, 2));
-    process.exit(summary.failed > 0 ? 1 : 0);
+    const output = JSON.stringify(result, null, 2);
+    console.log(output);
+    if (opts.output) { writeFileSync(opts.output, output, "utf-8"); console.error(`Saved to ${opts.output}`); }
   });
 
-// ── navigate ─────────────────────────────────────────────
+// ── assert ───────────────────────────────────────────────
 
 program
-  .command("navigate")
-  .description("Load a URL in the browser")
-  .argument("[url]", "Target URL (default from config)")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .action(async (url, opts) => {
+  .command("assert")
+  .description("Single-condition visual pass/fail check")
+  .argument("<assertion>", "The assertion to verify")
+  .requiredOption("--screenshot <path>", "Path to PNG screenshot")
+  .option("--model <model>", "VLM model override")
+  .action(async (assertion, opts) => {
     const cfg = getConfig();
-    const targetUrl = url ?? cfg.browser.url;
-    
-    if (opts.width && opts.height) {
-      await browser.captureScreenshot({
-        viewport: { width: opts.width, height: opts.height, deviceScaleFactor: 1 },
-        reload: false,
-      });
+    const provider = getProvider(cfg.vlm.provider);
+    const screenshotBuf = readFileSync(resolve(opts.screenshot));
+    const dataUrl = "data:image/png;base64," + screenshotBuf.toString("base64");
+
+    const prompt = buildAssertPrompt(assertion, cfg.prompts.strictness);
+    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
+    try {
+      console.log(JSON.stringify(extractJson(raw), null, 2));
+    } catch {
+      console.log(raw);
     }
-    await browser.navigate(targetUrl);
-    const info = await browser.getPageInfo();
-    console.log(JSON.stringify(info, null, 2));
-  });
-
-// ── scroll ────────────────────────────────────────────────
-
-program
-  .command("scroll")
-  .description("Scroll the page (handles lazy-loaded content)")
-  .option("--x <px>", "Horizontal scroll position", parseInt)
-  .option("--y <px>", "Vertical scroll position", parseInt)
-  .option("--selector <css>", "CSS selector to scroll into view")
-  .action(async (opts) => {
-    const cfg = getConfig();
-    
-    const info = await browser.scroll({ x: opts.x, y: opts.y, selector: opts.selector });
-    console.log(JSON.stringify(info, null, 2));
-  });
-
-// ── snapshot ─────────────────────────────────────────────
-
-program
-  .command("snapshot")
-  .description("Capture a browser screenshot")
-  .option("--url <url>", "Target URL")
-  .option("--output, -o <path>", "Output file path", "/tmp/spark-e2e-snapshot.png")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--no-reload", "Skip reload before capture")
-  .option("--delay <s>", "Delay after reload (seconds)", parseFloat, 0.3)
-  .option("--full-page", "Capture the entire scrollable page")
-  .action(async (opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    
-    console.log(`Navigating to ${url} ...`);
-    await browser.navigate(url);
-
-    const viewport = opts.width && opts.height
-      ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 }
-      : undefined;
-
-    const png = await browser.captureScreenshot({
-      viewport, reload: opts.reload, delay: opts.delay, fullPage: opts.fullPage ?? false,
-    });
-    const buf = Buffer.isBuffer(png) ? png : Buffer.from(png as ArrayBuffer);
-    writeFileSync(opts.output, buf);
-    console.log(`Saved ${opts.output} (${buf.length} bytes)`);
-    await browser.close();
   });
 
 // ── inspect ──────────────────────────────────────────────
 
 program
   .command("inspect")
-  .description("Analyze the current page with a VLM (free-form)")
+  .description("Free-form VLM screenshot analysis")
   .argument("<instruction>", "What to look for")
-  .option("--url <url>", "Target URL")
+  .requiredOption("--screenshot <path>", "Path to PNG screenshot")
   .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--no-reload", "Skip reload")
-  .option("--delay <s>", "Delay after reload", parseFloat, 0.3)
   .action(async (instruction, opts) => {
     const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    
     const provider = getProvider(cfg.vlm.provider);
-
-    if (url) { await browser.navigate(url); }
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-      reload: opts.reload,
-      delay: opts.delay,
-    });
+    const screenshotBuf = readFileSync(resolve(opts.screenshot));
+    const dataUrl = "data:image/png;base64," + screenshotBuf.toString("base64");
 
     const prompt = [
       "You are a visual inspection tool for automated E2E testing.",
@@ -289,355 +164,53 @@ program
       `INSTRUCTION: ${instruction}`,
       "",
       "Be specific and precise. If you cannot determine something confidently, say so.",
-      getReviewPrompt(cfg.prompts.strictness),
     ].join("\n");
 
     const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     console.log(raw);
-    await browser.close();
-  });
-
-// ── assert ───────────────────────────────────────────────
-
-program
-  .command("assert")
-  .description("Verify a visual condition (returns pass/fail JSON)")
-  .argument("<assertion>", "The assertion to verify")
-  .option("--url <url>", "Target URL")
-  .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--no-reload", "Skip reload")
-  .option("--delay <s>", "Delay after reload", parseFloat, 0.3)
-  .action(async (assertion, opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    
-    const provider = getProvider(cfg.vlm.provider);
-
-    if (url) { await browser.navigate(url); }
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-      reload: opts.reload,
-      delay: opts.delay,
-    });
-
-    const prompt = [
-      "You are a visual E2E test verifier. Determine whether this assertion is TRUE or FALSE.",
-      `ASSERTION: ${assertion}`,
-      "",
-      getAssertPrompt(cfg.prompts.strictness),
-      "",
-      'Respond ONLY with JSON: {"pass": true|false, "confidence": "high"|"medium"|"low", "observation": "...", "reasoning": "..."}',
-    ].join("\n");
-
-    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-    try {
-      console.log(JSON.stringify(extractJson(raw), null, 2));
-    } catch {
-      console.log(raw);
-    }
-    await browser.close();
-  });
-
-// ── compare ──────────────────────────────────────────────
-
-program
-  .command("compare")
-  .description("Compare page against an expected description")
-  .argument("<expected>", "Expected visual state description")
-  .option("--url <url>", "Target URL")
-  .option("--after <action>", "Action performed before comparison")
-  .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .action(async (expected, opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    
-    const provider = getProvider(cfg.vlm.provider);
-
-    if (url) { await browser.navigate(url); }
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-      reload: true,
-    });
-
-    const actionCtx = opts.after ? `CONTEXT — Action performed: ${opts.after}\n\n` : "";
-    const prompt = [
-      "You are a visual regression tester. Compare this screenshot against the expected state.",
-      actionCtx,
-      `EXPECTED STATE: ${expected}`,
-      "",
-      getReviewPrompt(cfg.prompts.strictness),
-      "",
-      'Respond ONLY with JSON: {"match": true|false, "differences": [...], "matches": [...], "overall_assessment": "..."}',
-    ].join("\n");
-
-    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-    try {
-      console.log(JSON.stringify(extractJson(raw), null, 2));
-    } catch {
-      console.log(raw);
-    }
-    await browser.close();
-  });
-
-// ── @ref resolver (shared by click/type/hover) ────────────
-
-function resolveDomRef(ref: string): { x: number; y: number } | null {
-  const domStatePath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
-  if (!existsSync(domStatePath)) {
-    console.error(`No dom-state.json found. Run \`spark-e2e dom-verify --save\` first.`);
-    return null;
-  }
-  try {
-    const state = JSON.parse(readFileSync(domStatePath, "utf-8"));
-    const el = state.layout?.find((e: { ref: string }) => e.ref === ref);
-    if (!el) {
-      console.error(`Ref "${ref}" not found in dom-state.json (${state.layout?.length || 0} elements).`);
-      return null;
-    }
-    console.error(`Resolved ${ref} → (${el.center.x}, ${el.center.y}) [${el.tag}${el.text ? ' "' + el.text.slice(0,30) + '"' : ''}]`);
-    return { x: el.center.x, y: el.center.y };
-  } catch (err) {
-    console.error(`Failed to parse dom-state.json: ${(err as Error).message}`);
-    return null;
-  }
-}
-
-// ── click ─────────────────────────────────────────────────
-
-program
-  .command("click")
-  .description("Click an element by CSS selector, visual description, or @ref")
-  .argument("<target>", "CSS selector, visual description, or @ref of the element")
-  .option("--selector", "Treat <target> as a CSS selector (no VLM)")
-  .option("--url <url>", "Target URL")
-  .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .action(async (target, opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    if (url) await browser.navigate(url);
-
-    // --selector: direct DOM targeting, no VLM
-    if (opts.selector) {
-      const page = await browser.ensurePage();
-      await page.locator(target).click();
-      console.log(JSON.stringify({ clicked: target, via: "selector" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    // @ref shortcut: use saved DOM state, no VLM needed
-    if (target.startsWith("@")) {
-      const coords = resolveDomRef(target);
-      if (!coords) { await browser.close(); process.exit(1); }
-      await browser.clickAt(coords.x, coords.y);
-      console.log(JSON.stringify({ clicked: target, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    const provider = getProvider(cfg.vlm.provider);
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-    });
-
-    console.error(`Locating: "${target}"`);
-    const prompt = getLocatePrompt(target);
-    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-
-    let result: Record<string, unknown>;
-    try { result = extractJson(raw) as Record<string, unknown>; } catch { result = {}; }
-
-    if (!result.found) {
-      console.error(`Element not found: ${result.reasoning || "unknown reason"}`);
-      await browser.close();
-      process.exit(1);
-    }
-
-    const x = result.x as number;
-    const y = result.y as number;
-    await browser.clickAt(x, y);
-    console.log(JSON.stringify({ clicked: target, x, y, confidence: result.confidence, via: "vlm" }, null, 2));
-    await browser.close();
-  });
-
-// ── type ──────────────────────────────────────────────────
-
-program
-  .command("type")
-  .description("Type text into a field by CSS selector, visual description, or @ref")
-  .argument("<text>", "Text to type")
-  .requiredOption("--into <target>", "CSS selector, visual description, or @ref of the target field")
-  .option("--selector", "Treat --into as a CSS selector (no VLM)")
-  .option("--url <url>", "Target URL")
-  .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .action(async (text, opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    if (url) await browser.navigate(url);
-
-    // --selector: direct DOM targeting, no VLM
-    if (opts.selector) {
-      const page = await browser.ensurePage();
-      await page.locator(opts.into).click();
-      await browser.waitForTimeout(150);
-      await page.locator(opts.into).fill(text);
-      console.log(JSON.stringify({ typed: text, into: opts.into, via: "selector" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    // @ref shortcut
-    if (opts.into.startsWith("@")) {
-      const coords = resolveDomRef(opts.into);
-      if (!coords) { await browser.close(); process.exit(1); }
-      await browser.clickAt(coords.x, coords.y);
-      await browser.waitForTimeout(150);
-      await browser.clearAndType(text);
-      console.log(JSON.stringify({ typed: text, into: opts.into, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    const provider = getProvider(cfg.vlm.provider);
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-    });
-
-    // Step 1: locate the field
-    console.error(`Locating: "${opts.into}"`);
-    const locatePrompt = getLocatePrompt(opts.into);
-    const locateRaw = await provider.chat(locatePrompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-
-    let locateResult: Record<string, unknown>;
-    try { locateResult = extractJson(locateRaw) as Record<string, unknown>; } catch { locateResult = {}; }
-
-    if (!locateResult.found) {
-      console.error(`Target field not found: ${locateResult.reasoning || "unknown reason"}`);
-      await browser.close();
-      process.exit(1);
-    }
-
-    // Step 2: click to focus
-    await browser.clickAt(locateResult.x as number, locateResult.y as number);
-    await browser.waitForTimeout(150);
-
-    // Step 3: clear + type
-    await browser.clearAndType(text);
-
-    console.log(JSON.stringify({
-      typed: text,
-      into: opts.into,
-      x: locateResult.x,
-      y: locateResult.y,
-      confidence: locateResult.confidence,
-      via: "vlm",
-    }, null, 2));
-    await browser.close();
-  });
-
-// ── hover ─────────────────────────────────────────────────
-
-program
-  .command("hover")
-  .description("Hover over an element by CSS selector, visual description, or @ref")
-  .argument("<target>", "CSS selector, visual description, or @ref of the element")
-  .option("--selector", "Treat <target> as a CSS selector (no VLM)")
-  .option("--url <url>", "Target URL")
-  .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .action(async (target, opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    if (url) await browser.navigate(url);
-
-    // --selector: direct DOM targeting, no VLM
-    if (opts.selector) {
-      const page = await browser.ensurePage();
-      await page.locator(target).hover();
-      console.log(JSON.stringify({ hovered: target, via: "selector" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    // @ref shortcut
-    if (target.startsWith("@")) {
-      const coords = resolveDomRef(target);
-      if (!coords) { await browser.close(); process.exit(1); }
-      await browser.hoverAt(coords.x, coords.y);
-      console.log(JSON.stringify({ hovered: target, x: coords.x, y: coords.y, via: "dom-ref" }, null, 2));
-      await browser.close();
-      return;
-    }
-
-    const provider = getProvider(cfg.vlm.provider);
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-    });
-
-    console.error(`Locating: "${target}"`);
-    const prompt = getLocatePrompt(target);
-    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-
-    let result: Record<string, unknown>;
-    try { result = extractJson(raw) as Record<string, unknown>; } catch { result = {}; }
-
-    if (!result.found) {
-      console.error(`Element not found: ${result.reasoning || "unknown reason"}`);
-      await browser.close();
-      process.exit(1);
-    }
-
-    await browser.hoverAt(result.x as number, result.y as number);
-    console.log(JSON.stringify({ hovered: target, x: result.x, y: result.y, confidence: result.confidence, via: "vlm" }, null, 2));
-    await browser.close();
   });
 
 // ── test ─────────────────────────────────────────────────
 
 program
   .command("test")
-  .description("Natural language E2E test — navigate, review, and assert in one call")
-  .argument("<expectations>", "What you expect to see (natural language, e.g. 'The sidebar has 5 menu items and Dashboard is highlighted')")
-  .option("--url <url>", "Target URL")
+  .description("Multi-expectation visual verification")
+  .argument("<expectations>", "What you expect to see (natural language)")
+  .requiredOption("--screenshot <path>", "Path to PNG screenshot")
   .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--no-reload", "Skip reload")
-  .option("--delay <s>", "Delay after reload", parseFloat, 0.3)
   .action(async (expectations, opts) => {
     const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-
     const provider = getProvider(cfg.vlm.provider);
-
-    if (url) { await browser.navigate(url); }
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-      reload: opts.reload,
-      delay: opts.delay,
-    });
+    const screenshotBuf = readFileSync(resolve(opts.screenshot));
+    const dataUrl = "data:image/png;base64," + screenshotBuf.toString("base64");
 
     console.error(`Testing: ${expectations.slice(0, 80)}${expectations.length > 80 ? "..." : ""}`);
 
-    const prompt = getTestPrompt(expectations, cfg.prompts.strictness);
+    const prompt = [
+      "You are a visual E2E test runner. A user has described what they expect to see on a page.",
+      "Your job: check EVERY expectation against the screenshot and report pass/fail for each.",
+      "",
+      "RULES:",
+      "- Each expectation is a separate check. Report pass/fail independently per expectation.",
+      "- Only report what you ACTUALLY SEE. If an element is not visible, say so — don't guess.",
+      "- For text content: quote EXACT text you see. If text is cut off, report the visible portion.",
+      "- Structural checks (layout, alignment, sizing, visibility) are more reliable than exact color/value checks.",
+      "- If a check is about dynamic data (numbers, timestamps, user names), be lenient —",
+      "  only fail if the STRUCTURE is broken (missing label, truncated text), not if the value changed.",
+      "- If you genuinely cannot determine pass/fail, set confidence to 'low' and explain why.",
+      "- Be specific in your reasoning: mention WHERE on the page you looked and WHAT you observed.",
+      "",
+      `EXPECTATIONS TO VERIFY:\n${expectations}`,
+      "",
+      'Respond ONLY with JSON: {"pass": true|false, "confidence": "high"|"medium"|"low", "checks": [{"expectation": "...", "pass": true|false, "confidence": "high"|"medium"|"low", "observation": "...", "reasoning": "..."}], "summary": "..."}',
+    ].join("\n");
 
     const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
     try {
-      const result = extractJson(raw);
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(extractJson(raw), null, 2));
     } catch {
       console.log(raw);
     }
-    await browser.close();
   });
 
 // ── baseline ──────────────────────────────────────────────
@@ -648,38 +221,35 @@ const baseline = program
 
 baseline
   .command("save")
-  .description("Save current page screenshot as a named baseline")
+  .description("Save a screenshot as a named baseline")
   .requiredOption("--name <name>", "Baseline name (e.g. 'dashboard-v1')")
-  .option("--url <url>", "Target URL")
+  .requiredOption("--screenshot <path>", "Path to PNG screenshot")
+  .option("--url <url>", "Page URL for metadata")
   .option("--width <px>", "Viewport width", parseInt)
   .option("--height <px>", "Viewport height", parseInt)
-  .action(async (opts) => {
+  .action((opts) => {
     const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-
-    if (url) await browser.navigate(url);
-    const { buf } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-    });
+    const buf = readFileSync(resolve(opts.screenshot));
 
     const dir = saveBaseline(opts.name, buf, {
-      url,
-      viewport: { width: opts.width ?? cfg.viewport.width, height: opts.height ?? cfg.viewport.height, deviceScaleFactor: 1 },
+      url: opts.url ?? "",
+      viewport: {
+        width: opts.width ?? cfg.viewport.width,
+        height: opts.height ?? cfg.viewport.height,
+        deviceScaleFactor: 1,
+      },
       model: cfg.vlm.model,
     });
 
     console.log(JSON.stringify({ saved: opts.name, path: dir }, null, 2));
-    await browser.close();
   });
 
 baseline
   .command("compare")
-  .description("Compare current page against a saved baseline (AI-powered visual diff)")
+  .description("Compare a screenshot against a saved baseline (AI-powered visual diff)")
   .requiredOption("--name <name>", "Baseline name to compare against")
-  .option("--url <url>", "Target URL")
+  .requiredOption("--screenshot <path>", "Path to current PNG screenshot")
   .option("--model <model>", "VLM model override")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
   .action(async (opts) => {
     const cfg = getConfig();
     const provider = getProvider(cfg.vlm.provider);
@@ -690,38 +260,26 @@ baseline
       process.exit(1);
     }
 
-    const url = opts.url ?? baselineEntry.meta.url;
-    if (url) await browser.navigate(url);
-
-    // Use same viewport as baseline or override from CLI
-    const vpWidth = opts.width ?? baselineEntry.meta.viewport.width;
-    const vpHeight = opts.height ?? baselineEntry.meta.viewport.height;
-
-    const { buf: currentPngBuf } = await captureAndEncode({
-      viewport: { width: vpWidth, height: vpHeight, deviceScaleFactor: 1 },
-    });
-
     const baselinePng = readBaselineScreenshot(opts.name);
     if (!baselinePng) {
       console.error(`Baseline "${opts.name}" screenshot missing. Re-save it.`);
       process.exit(1);
     }
 
+    const currentPng = readFileSync(resolve(opts.screenshot));
     const baselineDataUrl = "data:image/png;base64," + baselinePng.toString("base64");
-    const currentDataUrl = "data:image/png;base64," + currentPngBuf.toString("base64");
+    const currentDataUrl = "data:image/png;base64," + currentPng.toString("base64");
 
     console.error(`Comparing against baseline "${opts.name}" (${baselineEntry.meta.timestamp}) ...`);
 
-    const prompt = getBaselineComparePrompt(opts.name);
+    const prompt = buildBaselineComparePrompt(opts.name);
     const raw = await provider.chat(prompt, [baselineDataUrl, currentDataUrl], opts.model, cfg.vlm.thinkingBudget);
 
     try {
-      const result = extractJson(raw);
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(extractJson(raw), null, 2));
     } catch {
       console.log(raw);
     }
-    await browser.close();
   });
 
 baseline
@@ -730,7 +288,7 @@ baseline
   .action(() => {
     const baselines = listBaselines();
     if (baselines.length === 0) {
-      console.log("No baselines saved yet. Use `spark-e2e baseline save --name <name>` to create one.");
+      console.log("No baselines saved yet. Use `spark-e2e baseline save --name <name> --screenshot <path>` to create one.");
       return;
     }
     console.log(JSON.stringify(
@@ -760,138 +318,42 @@ baseline
     }
   });
 
-// ── review ───────────────────────────────────────────────
+// ── dom-lint ─────────────────────────────────────────────
 
 program
-  .command("review")
-  .description("Comprehensive visual UI audit (returns structured findings)")
-  .option("--url <url>", "Target URL")
-  .option("--focus <focus>", "comprehensive|layout|typography|charts|interactive", "comprehensive")
-  .option("--model <model>", "VLM model override")
-  .option("--output, -o <path>", "Save report to file")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--no-reload", "Skip reload")
-  .option("--delay <s>", "Delay after reload", parseFloat, 0.3)
+  .command("dom-lint")
+  .description("Run deterministic DOM rule checks (token compliance, a11y)")
+  .requiredOption("--dom <path>", "Path to DOM dump JSON file")
+  .option("--rules <path>", "Path to dom-rules.json (default: .spark/plugin/e2e/dom-rules.json)")
+  .option("--enable <ids>", "Comma-separated rule IDs to run (default: all)")
   .action(async (opts) => {
-    const cfg = getConfig();
-    const url = opts.url ?? cfg.browser.url;
-    
-    const provider = getProvider(cfg.vlm.provider);
+    const { loadDomRules } = await import("./engine/rules.js");
+    const domRules = loadDomRules(opts.rules);
+    const enabledRules = opts.enable ? opts.enable.split(",").map((s: string) => s.trim()) : undefined;
 
-    if (url) { await browser.navigate(url); }
-    const { dataUrl } = await captureAndEncode({
-      viewport: opts.width && opts.height ? { width: opts.width, height: opts.height, deviceScaleFactor: 1 } : undefined,
-      reload: opts.reload,
-      delay: opts.delay,
+    const result = domLint({
+      dom: JSON.parse(readFileSync(resolve(opts.dom), "utf-8")),
+      rules: domRules,
+      enabledRules,
     });
 
-    const focusPrompts: Record<string, string> = {
-      comprehensive: "Review ALL aspects: layout, alignment, spacing, color consistency, typography, text truncation, visual artifacts.",
-      layout: "Focus on layout: card heights, grid alignment, spacing, uneven gaps, overlapping content.",
-      typography: "Focus on typography: text truncation, contrast, font inconsistencies, overlapping text, cut-off labels.",
-      charts: "Focus on charts: gauge arc colors, donut label clipping, axis/legend artifacts, label positioning.",
-      interactive: "Focus on interactive: button states, hover feedback, menu highlighting, tooltip visibility.",
-    };
-
-    const aesthetics = getAesthetics();
-    const prompt = [
-      "You are a senior UI quality reviewer. Do a thorough visual audit.",
-      `FOCUS: ${focusPrompts[opts.focus] ?? focusPrompts.comprehensive}`,
-      "",
-      "For each issue: describe what's wrong, why it matters, how severe.",
-      getReviewPrompt(cfg.prompts.strictness),
-      getAestheticsPrompt(aesthetics),
-      "",
-      'Respond ONLY with JSON: {"findings": [{"description":"...","location":"...","severity":"critical|major|minor","category":"layout|typography|color|spacing|rendering"}], "summary":"...", "no_issues_found":false}',
-    ].join("\n");
-
-    console.log(`Reviewing (focus=${opts.focus}) ...`);
-    const raw = await provider.chat(prompt, dataUrl, opts.model, cfg.vlm.thinkingBudget);
-    try {
-      const result = extractJson(raw);
-      const output = JSON.stringify(result, null, 2);
-      console.log(output);
-      if (opts.output) { writeFileSync(opts.output, output, "utf-8"); console.log(`Saved to ${opts.output}`); }
-    } catch {
-      console.log(raw);
-    }
-    await browser.close();
+    console.log(JSON.stringify(result, null, 2));
   });
 
-// ── dom-verify ───────────────────────────────────────────
+// ── dom-get ──────────────────────────────────────────────
 
 program
-  .command("dom-verify")
-  .description("Batch DOM structure + CSS token discovery (with element refs)")
-  .option("--url <url>", "Target URL (navigate first)")
-  .option("--width <px>", "Viewport width", parseInt)
-  .option("--height <px>", "Viewport height", parseInt)
-  .option("--save", "Save to .spark/plugin/e2e/dom-state.json for @ref lookups")
-  .action(async (opts) => {
-    const cfg = getConfig();
-    
-
-    if (opts.url) {
-      if (opts.width && opts.height) {
-        await browser.captureScreenshot({
-          viewport: { width: opts.width, height: opts.height, deviceScaleFactor: 1 },
-          reload: false,
-        });
-      }
-      await browser.navigate(opts.url);
+  .command("dom-get")
+  .description("Look up an element by @ref in a DOM dump")
+  .argument("<ref>", "Element reference (e.g. @button-3)")
+  .requiredOption("--dom <path>", "Path to DOM dump JSON file")
+  .action((ref, opts) => {
+    const el = domGet(ref, resolve(opts.dom));
+    if (!el) {
+      console.error(`Element "${ref}" not found in DOM dump.`);
+      process.exit(1);
     }
-
-    const cssVarList = cfg.cssVariables.length > 0
-      ? cfg.cssVariables
-      : ["--color-accent", "--color-text", "--color-text-secondary", "--color-text-muted",
-         "--color-border", "--color-primary", "--color-positive", "--color-negative", "--color-warning"];
-
-    const jsCode = `(function() {
-  var root = document.getElementById('root') || document.querySelector('#app, [class*="app"]');
-  var main = root ? root.firstElementChild : null;
-  var idx = 0;
-  var layout = Array.from(main ? main.children : document.body.children).map(function(c) {
-    var r = c.getBoundingClientRect();
-    idx++;
-    var name = c.getAttribute('aria-label') || c.getAttribute('name') || c.getAttribute('placeholder') || '';
-    var text = (c.textContent||'').trim().slice(0,40);
-    var ref = '@' + (name ? name.replace(/[^a-zA-Z0-9]/g, '-').slice(0,20) + '-' + c.tagName.toLowerCase() : c.tagName.toLowerCase() + '-' + idx);
-    return {ref: ref, tag: c.tagName, classes: (c.className||'').slice(0,60), role: c.getAttribute('role')||'', center: {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2)}, top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height), text: text};
-  });
-  var classPrefixes = new Set();
-  var all = Array.from(document.querySelectorAll('[class]'));
-  for (var i = 0; i < Math.min(200, all.length); i++) {
-    var names = all[i].className.split(/\\\\s+/);
-    for (var j = 0; j < names.length; j++) {
-      if (names[j] && !names[j].startsWith('_')) classPrefixes.add(names[j].split('__')[0].split('--')[0]);
-    }
-  }
-  var rootStyle = getComputedStyle(document.documentElement);
-  var cssVars = {};
-  ${JSON.stringify(cssVarList)}.forEach(function(v) {
-    var val = rootStyle.getPropertyValue(v).trim();
-    if (val) cssVars[v] = val;
-  });
-  return {layout: layout, classPrefixes: Array.from(classPrefixes).sort().slice(0,30), cssVars: cssVars};
-})()`;
-
-    const result = await browser.executeJs(jsCode) as {
-      layout: Array<{ ref: string; tag: string; center: { x: number; y: number }; text: string }>;
-      classPrefixes: string[];
-      cssVars: Record<string, string>;
-    };
-
-    // --save: persist to disk for @ref resolution by click/type/hover
-    if (opts.save) {
-      const domStatePath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-state.json");
-      mkdirSync(dirname(domStatePath), { recursive: true });
-      writeFileSync(domStatePath, JSON.stringify(result, null, 2));
-      console.error(`Saved: ${domStatePath} (${result.layout.length} elements)`);
-    }
-
-    console.log(JSON.stringify(result, null, 2));
-    await browser.close();
+    console.log(JSON.stringify(el, null, 2));
   });
 
 // ── doctor ───────────────────────────────────────────────
@@ -919,23 +381,21 @@ program
     }
 
     try {
-      const cfg = load();
-      console.log(`  Browser: Playwright`);
-      if (cfg.browser.url) console.log(`  URL: ${cfg.browser.url}`);
-      console.log(`  VLM provider: ${cfg.vlm.provider}`);
-      console.log(`  VLM model: ${cfg.vlm.model}`);
-      console.log(`  API key: ${cfg.vlm.apiKey ? "***" : "(not set)"}`);
+      const c = load();
+      if (c.browser?.url) console.log(`  URL: ${c.browser.url}`);
+      console.log(`  VLM provider: ${c.vlm.provider}`);
+      console.log(`  VLM model: ${c.vlm.model}`);
+      console.log(`  API key: ${c.vlm.apiKey ? "***" : "(not set)"}`);
     } catch (e) {
       console.log(`✗ Config error: ${e}`);
     }
 
-    // Check for project .env (test credentials)
+    // Check for project .env
     const projectEnv = resolve(process.cwd(), ".env");
     if (existsSync(projectEnv)) {
-      console.log(`  ✓ Project .env found (test credentials)`);
+      console.log(`  ✓ Project .env found`);
     } else {
       console.log(`  ⓘ  No project .env — create one for test credentials`);
-      console.log(`     e.g. TEST_PASSWORD=... and use \${TEST_PASSWORD} in YAML steps`);
     }
 
     // AESTHETICS.md
@@ -952,18 +412,17 @@ program
         const label = src.startsWith(homedir()) ? `Global: ${src.replace(homedir(), "~")}` : `Project: ${src}`;
         console.log(`  ✓ ${label}`);
       }
-      if (aesthetics.sources.length === 2) {
-        console.log(`  → Merging: project appended after global`);
-      }
     }
 
+    // dom-rules.json
     console.log();
-    console.log("─ Browser ─");
-    console.log("  Backend: Playwright");
-    try {
-      const r = spawnSync("npx", ["playwright", "--version"], { encoding: "utf-8", timeout: 10000 });
-      console.log(r.status === 0 ? `  ✓ ${(r.stdout ?? "").trim()}` : "  ✗ playwright not found");
-    } catch { console.log("  ✗ playwright check failed"); }
+    console.log("─ dom-rules.json ─");
+    const domRulesPath = resolve(process.cwd(), ".spark", "plugin", "e2e", "dom-rules.json");
+    if (existsSync(domRulesPath)) {
+      console.log(`  ✓ ${domRulesPath}`);
+    } else {
+      console.log(`  ⓘ  No dom-rules.json — run /spark-e2e-init to generate.`);
+    }
 
     console.log();
     if (!opts.quick) {
@@ -976,7 +435,6 @@ program
         console.log(`  Base URL: ${cfg.vlm.baseUrl || "(default)"}`);
         console.log(`  Model: ${cfg.vlm.model}`);
 
-        // Connectivity check
         try {
           const baseUrl = cfg.vlm.baseUrl || "https://api.openai.com/v1";
           const modelsUrl = baseUrl.replace(/\/+$/, "") + "/models";
@@ -985,21 +443,7 @@ program
             signal: AbortSignal.timeout(5000),
           });
           if (res.ok) {
-            const data = await res.json() as { data?: { id: string }[] };
-            const modelIds = (data.data ?? []).map((m: { id: string }) => m.id);
-            if (modelIds.length > 0) {
-              const found = modelIds.some((id: string) =>
-                id === cfg.vlm.model || id.includes(cfg.vlm.model) || cfg.vlm.model.includes(id)
-              );
-              if (found) {
-                console.log(`  ✓ Model "${cfg.vlm.model}" found (${modelIds.length} models available)`);
-              } else {
-                console.log(`  ⚠  Model "${cfg.vlm.model}" NOT in available models`);
-                console.log(`     Did you mean: ${modelIds.filter((id: string) => id.includes(cfg.vlm.model.split("-")[0])).slice(0, 3).join(", ") || modelIds.slice(0, 3).join(", ")}?`);
-              }
-            } else {
-              console.log(`  ✓ Endpoint reachable`);
-            }
+            console.log(`  ✓ Endpoint reachable`);
           } else {
             console.log(`  ⚠  Endpoint returned ${res.status} — check URL and API key`);
           }
@@ -1023,7 +467,6 @@ program
   .action(async (opts) => {
     const { MIGRATIONS, getPendingMigrations, runMigrations } = await import("./migrate.js");
 
-    // --list: show all migrations and their status for this project
     if (opts.list) {
       const pending = getPendingMigrations({ cwd: process.cwd() });
       console.log("spark-e2e migrations:");
@@ -1047,7 +490,6 @@ program
       return;
     }
 
-    // Show plan
     console.log(`Found ${pending.length} pending migration(s):`);
     console.log("");
     for (const m of pending) {
@@ -1062,13 +504,9 @@ program
       return;
     }
 
-    // Confirm
     if (!opts.yes) {
       const { confirm } = await import("@clack/prompts");
-      const ok = await confirm({
-        message: "Proceed with migration?",
-        initialValue: true,
-      });
+      const ok = await confirm({ message: "Proceed with migration?", initialValue: true });
       if (!ok || (typeof ok === "object" && (ok as { isCancel?: boolean }).isCancel)) {
         console.log("Cancelled.");
         return;
@@ -1080,7 +518,6 @@ program
 
 // ── Parse ────────────────────────────────────────────────
 
-// Only auto-parse when executed directly, not when imported by tests
 if (!process.env.VITEST) {
   program.parse();
 }

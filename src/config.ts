@@ -17,11 +17,6 @@ import { z } from "zod";
 
 // ── Schema ─────────────────────────────────────────────
 
-const BrowserConfigSchema = z.object({
-  // backend always Playwright — field kept for backward compat only
-  url: z.string().optional(),
-});
-
 const ViewportConfigSchema = z.object({
   width: z.number().default(1600),
   height: z.number().default(1200),
@@ -36,38 +31,23 @@ const VLMConfigSchema = z.object({
   thinkingBudget: z.number().int().min(0).default(4000),
 });
 
-const SelectorsConfigSchema = z.object({
-  card: z.string().default('[class*="card"]'),
-  progressFill: z.string().default('[class*="progress"][class*="fill"]'),
-  activeNav: z.string().default('[aria-current="page"]'),
-  sidebarItem: z
-    .string()
-    .default('[class*="sidebar"] [class*="item"], [class*="menu"] [class*="item"]'),
-});
-
 const PromptsConfigSchema = z.object({
   strictness: z.enum(["standard", "strict", "relaxed"]).default("standard"),
 });
 
 const SecurityConfigSchema = z.object({
-  maskSelectors: z.array(z.string()).default([
-    'input[type="password"]',
-    'input[name*="password" i]',
-    'input[name*="secret" i]',
-    'input[name*="token" i]',
-    'input[name*="apikey" i]',
-    'input[name*="api_key" i]',
-  ]),
+  maskSelectors: z.array(z.string()).default([]),
 });
 
 export const ConfigSchema = z.object({
-  browser: BrowserConfigSchema.default({}),
+  browser: z.object({ url: z.string().optional() }).default({}),
   viewport: ViewportConfigSchema.default({}),
   vlm: VLMConfigSchema.default({}),
-  selectors: SelectorsConfigSchema.default({}),
   prompts: PromptsConfigSchema.default({}),
   security: SecurityConfigSchema.default({}),
   cssVariables: z.array(z.string()).default([]),
+  // Deprecated — kept for backward compat with old config files
+  selectors: z.record(z.string()).default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -78,24 +58,10 @@ const DEFAULT_CONFIG: Config = {
   browser: {},
   viewport: { width: 1600, height: 1200, deviceScaleFactor: 1 },
   vlm: { apiKey: "", baseUrl: "", model: "gpt-4o", provider: "openai-compat", thinkingBudget: 4000 },
-  selectors: {
-    card: '[class*="card"]',
-    progressFill: '[class*="progress"][class*="fill"]',
-    activeNav: '[aria-current="page"]',
-    sidebarItem: '[class*="sidebar"] [class*="item"], [class*="menu"] [class*="item"]',
-  },
   prompts: { strictness: "standard" },
-  security: {
-    maskSelectors: [
-      'input[type="password"]',
-      'input[name*="password" i]',
-      'input[name*="secret" i]',
-      'input[name*="token" i]',
-      'input[name*="apikey" i]',
-      'input[name*="api_key" i]',
-    ],
-  },
+  security: { maskSelectors: [] },
   cssVariables: [],
+  selectors: {},
 };
 
 // ── Cache ───────────────────────────────────────────────
@@ -209,11 +175,9 @@ export function loadAesthetics(): { content: string; sources: string[] } {
 }
 
 function applyYamlToConfig(config: Config, data: Record<string, unknown>): void {
+  // browser.url kept for backward compat in config files
   const b = data.browser as Record<string, unknown> | undefined;
-  if (b) {
-    // backend removed — always Playwright
-    if (typeof b.url === "string") config.browser.url = b.url;
-  }
+  if (b && typeof b.url === "string") (config.browser as Record<string, string>).url = b.url;
 
   const v = data.viewport as Record<string, unknown> | undefined;
   if (v) {
@@ -231,15 +195,6 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
     if (typeof vlm.thinking_budget === "number") config.vlm.thinkingBudget = vlm.thinking_budget as number;
   }
 
-  const sel = data.selectors as Record<string, unknown> | undefined;
-  if (sel) {
-    for (const [k, v] of Object.entries(sel)) {
-      if (typeof v === "string" && k in config.selectors) {
-        (config.selectors as Record<string, string>)[k] = v;
-      }
-    }
-  }
-
   const cv = data.css_variables as string[] | undefined;
   if (Array.isArray(cv)) config.cssVariables = cv.map(String);
 
@@ -250,18 +205,10 @@ function applyYamlToConfig(config: Config, data: Record<string, unknown>): void 
       config.prompts.strictness = s;
     }
   }
-
-  const sec = data.security as Record<string, unknown> | undefined;
-  if (sec) {
-    if (Array.isArray(sec.mask_selectors)) {
-      config.security.maskSelectors = sec.mask_selectors.map(String);
-    }
-  }
 }
 
 function applyEnvVars(config: Config): void {
-  const envMap: [string, "browser" | "vlm", "backend" | "url" | "apiKey" | "baseUrl" | "model" | "provider"][] = [
-    ["SPARK_E2E_BACKEND", "browser", "backend"],
+  const envMap: [string, "browser" | "vlm", string][] = [
     ["SPARK_E2E_URL", "browser", "url"],
     ["SPARK_E2E_API_KEY", "vlm", "apiKey"],
     ["SPARK_E2E_BASE_URL", "vlm", "baseUrl"],
@@ -272,11 +219,11 @@ function applyEnvVars(config: Config): void {
   for (const [envName, section, key] of envMap) {
     const val = process.env[envName];
     if (val) {
-      (config[section] as Record<string, string>)[key] = val;
+      const s = config[section] as Record<string, unknown>;
+      if (s && key in s) (s as Record<string, string>)[key] = val;
     }
   }
 
-  // thinkingBudget is numeric — handle separately
   const thinkingVal = process.env.SPARK_E2E_THINKING_BUDGET;
   if (thinkingVal) {
     const n = parseInt(thinkingVal, 10);
@@ -342,10 +289,7 @@ export function load(configPath?: string): Config {
   applyLegacyEnvVars(config);
 
   // Validate
-  log(
-    `Config loaded: browser=playwright, ` +
-      `url=${config.browser.url}, vlm=${config.vlm.provider}, model=${config.vlm.model}`
-  );
+  log(`Config loaded: vlm=${config.vlm.provider}, model=${config.vlm.model}`);
 
   if (!config.vlm.apiKey) {
     log("WARNING: No VLM API key configured. Set SPARK_E2E_API_KEY or VLM_API_KEY.");

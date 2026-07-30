@@ -1,165 +1,146 @@
 ---
-description: Visual E2E testing and UI review using the spark-e2e CLI. Use for UI review, visual regression, E2E test automation, DOM verification, or any browser-based page check.
+description: Visual E2E testing and UI review using Playwright CLI + spark-e2e. Use for UI review, visual regression, DOM linting, or any browser-based page check.
 argument-hint: "[url] — e.g. http://localhost:5173/dashboard"
 ---
 
-Two modes:
+## Architecture
 
-| Mode | When | Output |
-|------|------|--------|
-| **Quick check** | "review this page", "is the sidebar aligned?" | Problem list |
-| **YAML runner** | "run login flow", "verify checkout E2E" | Pass/fail report |
+spark-e2e is a **VLM + DOM dual-engine visual audit tool**. It does NOT control the browser — Playwright CLI handles all browser interaction. spark-e2e handles visual analysis.
 
-Output is a **findings list or pass/fail result** — this skill does not fix code.
-
-## Output formats
-
-### review (open-ended)
-
-```json
-{
-  "findings": [
-    {
-      "severity": "critical | major | minor",
-      "category": "layout | typography | color | spacing | alignment | interactive | chart",
-      "description": "Sidebar highlight color is inconsistent with current page",
-      "location": "Top nav, third item from left",
-      "evidence": "actual: #3B82F6, expected: #1D4ED8 (from active_nav selector)",
-      "confidence": "high | medium | low"
-    }
-  ],
-  "summary": "3 issues found: 1 layout, 1 spacing, 1 color",
-  "no_issues_found": false
-}
+```
+Playwright CLI  →  browser control (navigate, click, type, screenshot, DOM dump)
+spark-e2e       →  visual analysis (review, assert, dom-lint, baseline compare)
 ```
 
-### assert (single condition)
+## Two review engines
 
-```json
-{
-  "pass": true,
-  "confidence": "high",
-  "observation": "Sidebar 'Dashboard' item highlighted, all others default",
-  "reasoning": "Checked aria-current on nav items — only Dashboard has aria-current='page'"
-}
+| Engine | What it checks | How |
+|--------|---------------|-----|
+| **VLM review** | Visual issues (layout, color, typography, spacing, charts) | Screenshot → VLM analysis |
+| **dom-lint** | Deterministic rules (token compliance, font-weight, a11y) | DOM dump → rule matching |
+
+Use both — they complement each other. VLM catches what the eye sees; dom-lint catches what only the DOM knows.
+
+## Quick start
+
+```bash
+# 1. Playwright captures the page
+playwright-cli open --browser=chrome
+playwright-cli goto http://localhost:5173/dashboard
+
+# 2. Playwright takes a screenshot and DOM dump
+#    (use page.screenshot() + page.evaluate() in a script, or playwright-cli snapshot)
+playwright-cli snapshot --filename /tmp/dom.json
+
+# 3. spark-e2e reviews the screenshot
+spark-e2e review --screenshot /tmp/screenshot.png --dom /tmp/dom.json --mode strict
+
+# 4. spark-e2e checks DOM rules
+spark-e2e dom-lint --dom /tmp/dom.json
+spark-e2e dom-get @button-3 --dom /tmp/dom.json
 ```
 
-### test (multi-expectation)
+## Commands
 
-```json
-{
-  "pass": false,
-  "confidence": "medium",
-  "checks": [
-    {
-      "expectation": "two cards have equal height",
-      "pass": false,
-      "confidence": "high",
-      "observation": "Left card 320px, right card 380px",
-      "reasoning": "Measured bounding rects — right card taller due to extra description text"
-    }
-  ],
-  "summary": "1/3 checks failed: card height mismatch"
-}
+### review — Visual audit
+
+```bash
+spark-e2e review --screenshot /tmp/shot.png [--dom /tmp/dom.json] [--mode light|strict] [--focus layout|typography|color|charts|interactive|comprehensive]
 ```
 
-### YAML runner report
+| Mode | Behavior | Cost |
+|------|----------|------|
+| `light` | 1 comprehensive VLM call | 1× |
+| `strict` | N parallel dimension-specific calls → intersect | N× |
 
-```json
-[
-  {
-    "name": "login flow",
-    "pass": true,
-    "steps": [
-      { "type": "navigate", "pass": true, "detail": "/login", "durationMs": 1200 },
-      { "type": "type", "pass": true, "detail": "[masked] into (420, 310)", "durationMs": 800 },
-      { "type": "click", "pass": true, "detail": "(500, 400)", "durationMs": 600 },
-      { "type": "assert", "pass": true, "detail": "Dashboard is visible", "durationMs": 2100 }
-    ],
-    "durationMs": 4700
-  }
-]
+Output is structured findings JSON with `source` tags:
+- `source: vlm` — VLM visual analysis
+- `source: dom` — confirmed by DOM cross-reference
+- `source: vlm_contested` — found by only 1 dimension in strict mode
+
+### assert — Single condition check
+
+```bash
+spark-e2e assert "sidebar highlight matches current page" --screenshot /tmp/shot.png
 ```
 
-### inspect (free-form)
+```json
+{"pass": true, "confidence": "high", "observation": "...", "reasoning": "..."}
+```
 
-VLM returns unstructured text answering the prompt. No fixed schema — parse key claims from the response.
+### dom-lint — Deterministic DOM checks
 
-## Before starting
+```bash
+spark-e2e dom-lint --dom /tmp/dom.json [--rules /path/to/dom-rules.json] [--enable no-hardcoded-px,font-weight-audit]
+```
 
-Verify the environment is ready:
+Built-in rules:
+- `no-hardcoded-px` — margin/padding with px instead of var(--space-*)
+- `no-raw-colors` — hex/rgb colors instead of var(--*)
+- `font-weight-audit` — computed weight vs dom-rules.json spec
+- `token-usage` — unknown CSS variable references
+- `missing-alt` — `<img>` without alt
+- `empty-button` — `<button>` without text/label
+
+### dom-get — Element lookup
+
+```bash
+spark-e2e dom-get @button-3 --dom /tmp/dom.json
+```
+
+Returns: tag, classes, computed styles, attributes, text.
+
+Use this when a VLM finding mentions an element — cross-reference to confirm or refute.
+
+### baseline — Visual regression
+
+```bash
+spark-e2e baseline save --name "dashboard-v1" --screenshot /tmp/shot.png
+spark-e2e baseline compare --name "dashboard-v1" --screenshot /tmp/shot.png
+spark-e2e baseline list
+spark-e2e baseline delete --name "dashboard-v1"
+```
+
+Baseline compare sends BOTH screenshots to VLM for semantic diff — not pixel diff.
+
+### inspect — Free-form analysis
+
+```bash
+spark-e2e inspect "check gauge labels are readable" --screenshot /tmp/shot.png
+```
+
+### doctor — Environment check
 
 ```bash
 spark-e2e doctor
 ```
 
-Confirm the output shows:
-- `✓` for Node, Playwright, and API key
-- AESTHETICS.md sources listed (global + project) — or a hint if missing
-- Project `.env` check — used for `${ENV_VAR}` credentials in YAML steps
+## Common workflow
 
-If anything is missing, report it to the user. Do NOT run `spark-e2e setup` or `npm install`.
-
-## Mode 1: Quick Check (single page)
-
-```bash
-spark-e2e navigate "$ARGUMENTS"
-spark-e2e scroll --y 0                   # ensure lazy content loaded
-
-# Open-ended review
-spark-e2e review --url "$ARGUMENTS"
-
-# Targeted assertions
-spark-e2e assert "sidebar highlight matches current page" --url "$ARGUMENTS"
-spark-e2e test "cards equal height, all KPIs visible" --url "$ARGUMENTS"
-
-# Free-form inspection
-spark-e2e inspect "check gauge labels are readable" --url "$ARGUMENTS"
+```
+1. Agent uses Playwright CLI to navigate, interact, screenshot
+2. Agent calls spark-e2e review → gets structured findings
+3. For each VLM finding: agent calls dom-get to cross-validate
+4. Agent calls dom-lint → gets deterministic DOM issues
+5. Agent reports combined findings to user
 ```
 
-## Mode 2: YAML Runner (multi-step flows)
+## init → review loop
 
-For login, checkout, multi-page workflows — write a YAML file, then execute:
-
-```yaml
-# tests/login.yaml
-scenarios:
-  - name: login flow
-    steps:
-      - navigate: https://app.example.com/login
-      - wait: 1
-      - type: { text: "${TEST_EMAIL}", into: "email field" }
-      - type: { text: "${TEST_PASSWORD}", into: "password field" }
-      - click: "Sign In button"
-      - wait: 2
-      - assert: "Dashboard is visible"
+```
+Code changes → spark-e2e-init rescans → AESTHETICS.md + dom-rules.json update
+                    ↓
+          spark-e2e review auto-uses latest specs
+                    ↓
+          VLM has grounded expectations ("expected: #F0824C from AESTHETICS.md")
+                    ↓
+          dom-lint uses same source ("expected: font-weight 500 from dom-rules.json")
 ```
 
-```bash
-spark-e2e run tests/login.yaml
-```
+## Gotchas
 
-**Credentials**: Never hardcode in YAML. Put secrets in `.env` (gitignored) and reference with `${VAR}`.
-
-**Available steps**: `navigate`, `click`, `type`, `hover`, `scroll`, `wait`, `snapshot`, `assert`, `test`
-
-## DOM Verification
-
-Before reporting VLM findings as issues, verify they're real:
-
-```bash
-spark-e2e dom-verify --url "$ARGUMENTS"           # full page structure
-spark-e2e dom-verify --url "$ARGUMENTS" --save     # save @refs for later lookups
-```
-
-Returns `{layout, classPrefixes, cssVars}`. Use selectors from the output to grep component CSS — never guess variable names.
-
-## Common Gotchas
-
-1. **Credentials via `${ENV_VAR}`** — never hardcode passwords/keys in YAML. Create `.env`, reference with `${VAR}`.
-2. **VLM hallucinations** — always DOM-verify before reporting. A 10s grep saves false findings.
-3. **Inline styles beat CSS** — chart/animation libs set inline styles, `!important` may be needed.
-4. **CSS vars in SVG** — resolve differently than in HTML. Check `getComputedStyle()`.
-5. **Animation wrappers break grid/flex** — add `height: 100%` to wrapper + inner container.
-6. **Narrow assertions** — "two cards equal height" not "page looks perfect".
-7. **Scroll before review** — lazy-loaded content may be off-screen. `spark-e2e scroll --y 0` first.
+1. **VLM hallucinations** — always DOM-verify before reporting. `dom-get` confirms or refutes.
+2. **Disabled elements** — VLM may flag a disabled button's color as "wrong". dom-get reveals `disabled` + low opacity. Not a bug.
+3. **Narrow assertions** — "two cards equal height" not "page looks perfect".
+4. **Credentials via ${ENV_VAR}** — never hardcode in commands. Use .env files.
+5. **Screenshot first, review second** — spark-e2e only analyzes. Playwright captures.
